@@ -1,0 +1,28 @@
+clusterServersConfig:
+  idleConnectionTimeout: 10000
+  connectTimeout: 10000
+  timeout: 3000
+  retryAttempts: 3
+  retryInterval: 1500
+  failedSlaveReconnectionInterval: 3000
+  password: redis@kuaidi100
+  subscriptionsPerConnection: 5
+  clientName: null
+  loadBalancer: !<org.redisson.connection.balancer.RoundRobinLoadBalancer> {}
+  subscriptionConnectionMinimumIdleSize: 1
+  subscriptionConnectionPoolSize: 50
+  slaveConnectionMinimumIdleSize: 16
+  slaveConnectionPoolSize: 32
+  masterConnectionMinimumIdleSize: 16
+  masterConnectionPoolSize: 32
+  readMode: "SLAVE"
+  nodeAddresses:
+    - "redis://192.168.249.160:7000"
+    - "redis://192.168.249.160:7001"
+    - "redis://192.168.249.160:7002"
+    - "redis://192.168.249.166:7003"
+  scanInterval: 1000
+threads: 0
+nettyThreads: 0
+codec: !<org.redisson.codec.JsonJacksonCodec> {}
+transportMode: "NIO"
