@@ -39,52 +39,54 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class Server {
 
     private static String basePath;
+    private static int bossN;
+    private static int workerN;
+    private static final int baseNum = 10000000;
 
-    private static final NioEventLoopGroup BOSS = new NioEventLoopGroup(2);
-    private static final NioEventLoopGroup WORKER = new NioEventLoopGroup(8);
+    private static final NioEventLoopGroup BOSS = new NioEventLoopGroup(bossN);
+    private static final NioEventLoopGroup WORKER = new NioEventLoopGroup(workerN);
     private static Channel channel;
 
-    private static final AtomicInteger EE_NUM = new AtomicInteger(0);
-    private static Map<Integer, EventExecutorAttach> eeAttachMap = new HashMap<>((int) (8 / .75) + 1);
-    private static long getOrderId(EventExecutor ee) {
-        EventExecutorAttach eventExecutorAttach = eeAttachMap.get(ee.hashCode());
+    private static final AtomicInteger EXECUTOR_NUM = new AtomicInteger(0);
+    private static Map<Integer, EventExecutorAttach> executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
+    private static EventExecutorAttach getAttach(EventExecutor executor) {
+        EventExecutorAttach eventExecutorAttach = executorAttachMap.get(executor.hashCode());
         if (eventExecutorAttach == null) {
-            int num = EE_NUM.getAndIncrement();
-            eventExecutorAttach = new EventExecutorAttach((byte) num, ee, new AtomicLong(num * 10000000), 0);
-            eeAttachMap.put(ee.hashCode(), eventExecutorAttach);
+            int num = EXECUTOR_NUM.getAndIncrement();
+            eventExecutorAttach = new EventExecutorAttach((byte) num, executor, new AtomicInteger(num * baseNum), 0);
+            executorAttachMap.put(executor.hashCode(), eventExecutorAttach);
         }
-        return eventExecutorAttach.getOrderId().incrementAndGet();
+        return eventExecutorAttach;
     }
-    private static int getWriteIndex(EventExecutor ee) {
-        EventExecutorAttach eventExecutorAttach = eeAttachMap.get(ee.hashCode());
-        if (eventExecutorAttach == null) {
-            int num = EE_NUM.getAndIncrement();
-            eventExecutorAttach = new EventExecutorAttach(ee, new AtomicLong(num * 10000000), 0);
-            eeAttachMap.put(ee.hashCode(), eventExecutorAttach);
-        }
-        return eventExecutorAttach.getWriteIndex();
+    private static int getOrderId(EventExecutor executor) {
+        return getAttach(executor).getOrderId().incrementAndGet();
     }
-    private static void setWriteIndex(EventExecutor ee, int writeIndex) {
-        eeAttachMap.get(ee.hashCode()).setWriteIndex(writeIndex);
+    private static int getWriteIndex(EventExecutor executor) {
+        return getAttach(executor).getWriteIndex();
+    }
+    private static void setWriteIndex(EventExecutor executor, int writeIndex) {
+        getAttach(executor).setWriteIndex(writeIndex);
     }
 
-    private static Map<Byte, Map<Long, OrderData>> orderData = new ConcurrentHashMap<>((int) (8 / .75) + 1);
-    private static void saveOrderData(EventExecutor ee, long orderId, OrderData od) {
-        Byte num = eeAttachMap.get(ee.hashCode()).getNum();
-        Map<Long, OrderData> odMap = orderData.get(num);
-        if (odMap == null) {
-            odMap = new HashMap<>(10000000);
-            orderData.put(num, odMap);
+    private static Map<Byte, Map<Integer, OrderIndexData>> indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
+    private static Map<Integer, OrderIndexData> getIndexMap(EventExecutor executor) {
+        Byte num = getAttach(executor).getNum();
+        Map<Integer, OrderIndexData> idxMap = indexMap.get(num);
+        if (idxMap == null) {
+            idxMap = new HashMap<>(baseNum);
+            indexMap.put(num, idxMap);
         }
-        odMap.put(orderId, od);
+        return idxMap;
     }
-    private static OrderData getOrderData(long orderId) {
-        return orderData.get((byte) (orderId / 10000000)).get(orderId);
+    private static void saveOrderData(EventExecutor executor, int orderId, OrderIndexData idxData) {
+        getIndexMap(executor).put(orderId, idxData);
+    }
+    private static OrderIndexData getOrderData(int orderId) {
+        return indexMap.get((byte) (orderId / baseNum)).get(orderId);
     }
 
     public String getBasePath() {
@@ -93,6 +95,22 @@ public class Server {
 
     public void setBasePath(String basePath) {
         this.basePath = basePath;
+    }
+
+    public static int getBossN() {
+        return bossN;
+    }
+
+    public static void setBossN(int bossN) {
+        Server.bossN = bossN;
+    }
+
+    public static int getWorkerN() {
+        return workerN;
+    }
+
+    public static void setWorkerN(int workerN) {
+        Server.workerN = workerN;
     }
 
     public static NioEventLoopGroup getBoss() {
@@ -174,14 +192,14 @@ public class Server {
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             EventExecutor executor = ctx.executor();
-            long orderId = getOrderId(executor);
+            int orderId = getOrderId(executor);
             paramMap.put(ORDER_ID, String.valueOf(orderId));
             String orderInfo = JSONObject.toJSONString(paramMap);
             int length = orderInfo.getBytes().length;
             int writeIndex = getWriteIndex(executor);
             fileWrite(basePath + executor.hashCode(), orderInfo, writeIndex);
             setWriteIndex(executor, length);
-            saveOrderData(executor, orderId, new OrderData(String.valueOf(executor.hashCode()), writeIndex, length));
+            saveOrderData(executor, orderId, new OrderIndexData(String.valueOf(executor.hashCode()), writeIndex, length));
 
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
@@ -198,8 +216,8 @@ public class Server {
         }
 
         private void findById(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
-            Long orderId = Long.valueOf(paramMap.get(ORDER_ID));
-            OrderData order = getOrderData(orderId);
+            Integer orderId = Integer.valueOf(paramMap.get(ORDER_ID));
+            OrderIndexData order = getOrderData(orderId);
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
             if (HttpUtil.isKeepAlive(request)) {
@@ -304,19 +322,13 @@ public class Server {
 
     static class EventExecutorAttach {
         Byte num;
-        EventExecutor ee;
-        AtomicLong orderId;
+        EventExecutor executor;
+        AtomicInteger orderId;
         Integer writeIndex;
 
-        public EventExecutorAttach(EventExecutor ee, AtomicLong orderId, Integer writeIndex) {
-            this.ee = ee;
-            this.orderId = orderId;
-            this.writeIndex = writeIndex;
-        }
-
-        public EventExecutorAttach(Byte num, EventExecutor ee, AtomicLong orderId, Integer writeIndex) {
+        public EventExecutorAttach(Byte num, EventExecutor executor, AtomicInteger orderId, Integer writeIndex) {
             this.num = num;
-            this.ee = ee;
+            this.executor = executor;
             this.orderId = orderId;
             this.writeIndex = writeIndex;
         }
@@ -329,19 +341,19 @@ public class Server {
             this.num = num;
         }
 
-        public EventExecutor getEe() {
-            return ee;
+        public EventExecutor getExecutor() {
+            return executor;
         }
 
-        public void setEe(EventExecutor ee) {
-            this.ee = ee;
+        public void setExecutor(EventExecutor executor) {
+            this.executor = executor;
         }
 
-        public AtomicLong getOrderId() {
+        public AtomicInteger getOrderId() {
             return orderId;
         }
 
-        public void setOrderId(AtomicLong orderId) {
+        public void setOrderId(AtomicInteger orderId) {
             this.orderId = orderId;
         }
 
@@ -354,12 +366,12 @@ public class Server {
         }
     }
 
-    static class OrderData {
+    static class OrderIndexData {
         String filename;
         Integer offset;
         Integer length;
 
-        public OrderData(String filename, Integer offset, Integer length) {
+        public OrderIndexData(String filename, Integer offset, Integer length) {
             this.filename = filename;
             this.offset = offset;
             this.length = length;
