@@ -242,50 +242,52 @@ public class Server {
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             EventExecutor executor = ctx.executor();
-            EventExecutorAttach attach = server.getAttach(executor);
+            executor.execute(() -> {
+                EventExecutorAttach attach = server.getAttach(executor);
 //            int orderId = server.getOrderId(executor);
-            int orderId = server.getOrderId(attach);
-            paramMap.put(ORDER_ID, String.valueOf(orderId));
+                int orderId = server.getOrderId(attach);
+                paramMap.put(ORDER_ID, String.valueOf(orderId));
 //            String fileName = server.getFileName(executor);
-            String fileName = server.getFileName(attach);
-            String orderInfo = JSONObject.toJSONString(paramMap);
-            int length = orderInfo.getBytes().length;
+                String fileName = server.getFileName(attach);
+                String orderInfo = JSONObject.toJSONString(paramMap);
+                int length = orderInfo.getBytes().length;
 //            int writeIndex = server.getWriteIndex(executor);
-            int writeIndex = attach.getWriteIndex();
-            if (writeIndex + length > FILE_SIZE) {
-                log.error("超出文件最大写索引");
-                server.setFileNum(executor, 1);
+                int writeIndex = attach.getWriteIndex();
+                if (writeIndex + length > FILE_SIZE) {
+                    log.error("超出文件最大写索引");
+                    server.setFileNum(executor, 1);
 //                fileName = server.getFileName(executor);
 //                writeIndex = server.getWriteIndex(executor);
-                fileName = server.getFileName(attach);
-                writeIndex = attach.getWriteIndex();
-            }
-            int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);
-            server.setWriteIndex(executor, nextWriteIndex);
-            server.saveOrderIndexData(executor, orderId, new OrderIndexData(fileName, writeIndex, length));
-            log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
-                    paramMap.get("USER_ID"),
-                    paramMap.get("COM"),
-                    paramMap.get("NUM"),
-                    paramMap.get("SENDER_NAME"),
-                    paramMap.get("SENDER_MOBILE"),
-                    paramMap.get("SENDER_ADDR"),
-                    paramMap.get("RECEIVER_NAME"),
-                    paramMap.get("RECEIVER_MOBILE"),
-                    paramMap.get("RECEIVER_ADDR"));
+                    fileName = server.getFileName(attach);
+                    writeIndex = attach.getWriteIndex();
+                }
+                int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);
+                server.setWriteIndex(executor, nextWriteIndex);
+                server.saveOrderIndexData(executor, orderId, new OrderIndexData(fileName, writeIndex, length));
+                log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
+                        paramMap.get("USER_ID"),
+                        paramMap.get("COM"),
+                        paramMap.get("NUM"),
+                        paramMap.get("SENDER_NAME"),
+                        paramMap.get("SENDER_MOBILE"),
+                        paramMap.get("SENDER_ADDR"),
+                        paramMap.get("RECEIVER_NAME"),
+                        paramMap.get("RECEIVER_MOBILE"),
+                        paramMap.get("RECEIVER_ADDR"));
 
-            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-            response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
-            if (HttpUtil.isKeepAlive(request)) {
-                response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-            }
+                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+                response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+                if (HttpUtil.isKeepAlive(request)) {
+                    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+                }
 
-            byte[] resp = String.format(SUCC_RESP, orderId).getBytes();
-            ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
-            byteBuf.writeBytes(resp);
-            response.content().writeBytes(byteBuf);
-            byteBuf.release();
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                byte[] resp = String.format(SUCC_RESP, orderId).getBytes();
+                ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
+                byteBuf.writeBytes(resp);
+                response.content().writeBytes(byteBuf);
+                byteBuf.release();
+                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            });
         }
 
         private void findById(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
@@ -335,7 +337,7 @@ public class Server {
 
         public static int fileWrite(String filePath, String content, int index) {
             File file = new File(filePath);
-            RandomAccessFile randomAccessTargetFile;
+            RandomAccessFile randomAccessTargetFile = null;
             MappedByteBuffer map;
             try {
                 randomAccessTargetFile = new RandomAccessFile(file, "rw");
@@ -347,13 +349,20 @@ public class Server {
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
+                try {
+                    if (randomAccessTargetFile != null) {
+                        randomAccessTargetFile.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
             return 0;
         }
 
         public static byte[] fileRead(String filePath, int position, int length) {
             File file = new File(filePath);
-            RandomAccessFile randomAccessTargetFile;
+            RandomAccessFile randomAccessTargetFile = null;
             MappedByteBuffer map;
             try {
                 randomAccessTargetFile = new RandomAccessFile(file, "r");
@@ -365,6 +374,13 @@ public class Server {
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
+                try {
+                    if (randomAccessTargetFile != null) {
+                        randomAccessTargetFile.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
             return null;
         }

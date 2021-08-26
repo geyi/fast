@@ -22,7 +22,7 @@ public class FastApplication {
             workN = Integer.parseInt(args[2]);
         }
         Server server = new Server(basePath, bossN, workN);
-        Channel channel = server.startServer(9001);
+        Channel channel = server.startServer(38080);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> server.destroy()));
         channel.closeFuture().syncUninterruptibly();
     }
