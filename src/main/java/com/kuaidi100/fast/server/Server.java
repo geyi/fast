@@ -11,6 +11,7 @@ import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
@@ -52,6 +53,7 @@ public class Server {
     private static final int BASE_NUM = 10000000;
     private static final int FILE_SIZE = 1 << 30;
     private static final String FILE_PREFIX = "ORDER_DATA_%d_%d";
+    private AtomicInteger orderAutoId = new AtomicInteger(0);
 
     private NioEventLoopGroup boss;
     private NioEventLoopGroup worker;
@@ -59,6 +61,7 @@ public class Server {
 
     private AtomicInteger executorNum = new AtomicInteger(0);
     private Map<Integer, EventExecutorAttach> executorAttachMap;
+
     private EventExecutorAttach getAttach(EventExecutor executor) {
         EventExecutorAttach eventExecutorAttach = executorAttachMap.get(executor.hashCode());
         if (eventExecutorAttach == null) {
@@ -73,32 +76,40 @@ public class Server {
         }
         return eventExecutorAttach;
     }
+
     private int getOrderId(EventExecutor executor) {
         return getAttach(executor).getOrderId().incrementAndGet();
     }
+
     private int getOrderId(EventExecutorAttach attach) {
         return attach.getOrderId().incrementAndGet();
     }
+
     private int getWriteIndex(EventExecutor executor) {
         return getAttach(executor).getWriteIndex();
     }
+
     private int getWriteIndex(EventExecutorAttach attach) {
         return attach.getWriteIndex();
     }
+
     private void setWriteIndex(EventExecutor executor, int writeIndex) {
         getAttach(executor).setWriteIndex(writeIndex);
     }
+
     private String getFileName(EventExecutor executor) {
         EventExecutorAttach attach = getAttach(executor);
         Byte num = attach.getNum();
         AtomicInteger fileNum = attach.getFileNum();
         return String.format(FILE_PREFIX, num, fileNum.get());
     }
+
     private String getFileName(EventExecutorAttach attach) {
         Byte num = attach.getNum();
         AtomicInteger fileNum = attach.getFileNum();
         return String.format(FILE_PREFIX, num, fileNum.get());
     }
+
     private void setFileNum(EventExecutor executor, int incrSize) {
         EventExecutorAttach attach = getAttach(executor);
         attach.getFileNum().addAndGet(incrSize);
@@ -107,6 +118,7 @@ public class Server {
     }
 
     private Map<Byte, Map<Integer, OrderIndexData>> indexMap;
+
     private Map<Integer, OrderIndexData> getIndexMap(EventExecutor executor) {
         Byte num = getAttach(executor).getNum();
         Map<Integer, OrderIndexData> idxMap = indexMap.get(num);
@@ -116,9 +128,11 @@ public class Server {
         }
         return idxMap;
     }
+
     private void saveOrderIndexData(EventExecutor executor, int orderId, OrderIndexData idxData) {
         getIndexMap(executor).put(orderId, idxData);
     }
+
     private OrderIndexData getOrderData(int orderId) {
         return indexMap.get((byte) (orderId / BASE_NUM)).get(orderId);
     }
@@ -163,7 +177,7 @@ public class Server {
         this.basePath = basePath;
         this.bossN = bossN;
         this.workerN = workerN;
-        boss  = new NioEventLoopGroup(bossN);
+        boss = new NioEventLoopGroup(bossN);
         worker = new NioEventLoopGroup(workerN);
         executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
         indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
@@ -173,6 +187,7 @@ public class Server {
         final Server server = this;
         ServerBootstrap serverBootstrap = new ServerBootstrap().group(boss, worker)
                 .channel(NioServerSocketChannel.class)
+                .option(ChannelOption.SO_BACKLOG, 4096)
                 .childHandler(new ChannelInitializer<Channel>() {
                     @Override
                     protected void initChannel(Channel ch) throws Exception {
@@ -245,7 +260,8 @@ public class Server {
             executor.execute(() -> {
                 EventExecutorAttach attach = server.getAttach(executor);
 //            int orderId = server.getOrderId(executor);
-                int orderId = server.getOrderId(attach);
+//                int orderId = server.getOrderId(attach);
+                int orderId = server.orderAutoId.incrementAndGet();
                 paramMap.put(ORDER_ID, String.valueOf(orderId));
 //            String fileName = server.getFileName(executor);
                 String fileName = server.getFileName(attach);
@@ -264,7 +280,7 @@ public class Server {
                 int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);
                 server.setWriteIndex(executor, nextWriteIndex);
                 server.saveOrderIndexData(executor, orderId, new OrderIndexData(fileName, writeIndex, length));
-                log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
+                /*log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
                         paramMap.get("USER_ID"),
                         paramMap.get("COM"),
                         paramMap.get("NUM"),
@@ -273,7 +289,7 @@ public class Server {
                         paramMap.get("SENDER_ADDR"),
                         paramMap.get("RECEIVER_NAME"),
                         paramMap.get("RECEIVER_MOBILE"),
-                        paramMap.get("RECEIVER_ADDR"));
+                        paramMap.get("RECEIVER_ADDR"));*/
 
                 FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
                 response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
