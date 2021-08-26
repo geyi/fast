@@ -123,7 +123,7 @@ public class Server {
         Byte num = getAttach(executor).getNum();
         Map<Integer, OrderIndexData> idxMap = indexMap.get(num);
         if (idxMap == null) {
-            idxMap = new HashMap<>(BASE_NUM);
+            idxMap = new HashMap<>((int) (BASE_NUM / .75) + 1);
             indexMap.put(num, idxMap);
         }
         return idxMap;
@@ -135,42 +135,6 @@ public class Server {
 
     private OrderIndexData getOrderData(int orderId) {
         return indexMap.get((byte) (orderId / BASE_NUM)).get(orderId);
-    }
-
-    public String getBasePath() {
-        return basePath;
-    }
-
-    public void setBasePath(String basePath) {
-        this.basePath = basePath;
-    }
-
-    public int getBossN() {
-        return bossN;
-    }
-
-    public void setBossN(int bossN) {
-        this.bossN = bossN;
-    }
-
-    public int getWorkerN() {
-        return workerN;
-    }
-
-    public void setWorkerN(int workerN) {
-        this.workerN = workerN;
-    }
-
-    public NioEventLoopGroup getBoss() {
-        return boss;
-    }
-
-    public NioEventLoopGroup getWorker() {
-        return worker;
-    }
-
-    public Channel getChannel() {
-        return channel;
     }
 
     public Server(String basePath, int bossN, int workerN) {
@@ -259,21 +223,15 @@ public class Server {
             EventExecutor executor = ctx.executor();
             executor.execute(() -> {
                 EventExecutorAttach attach = server.getAttach(executor);
-//            int orderId = server.getOrderId(executor);
-//                int orderId = server.getOrderId(attach);
-                int orderId = server.orderAutoId.incrementAndGet();
+                int orderId = server.getOrderId(attach);
                 paramMap.put(ORDER_ID, String.valueOf(orderId));
-//            String fileName = server.getFileName(executor);
                 String fileName = server.getFileName(attach);
                 String orderInfo = JSONObject.toJSONString(paramMap);
                 int length = orderInfo.getBytes().length;
-//            int writeIndex = server.getWriteIndex(executor);
                 int writeIndex = attach.getWriteIndex();
                 if (writeIndex + length > FILE_SIZE) {
                     log.error("超出文件最大写索引");
                     server.setFileNum(executor, 1);
-//                fileName = server.getFileName(executor);
-//                writeIndex = server.getWriteIndex(executor);
                     fileName = server.getFileName(attach);
                     writeIndex = attach.getWriteIndex();
                 }
