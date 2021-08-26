@@ -2,13 +2,12 @@
 <Configuration monitorInterval="60" status="OFF">
     <Properties>
         <Property name="app_id">fast</Property>
-        <Property name="log_path">/opt/kuaidi100/runnable_jar/advertisement/logs</Property>
+        <Property name="log_path">/root/fast/logs</Property>
         <Property name="pattern">${app_id}[${sys:local-ip}]-%d{yyyy-MM-dd HH:mm:ss,SSS}[%X{traceId}]|%-5level|%t|%c{5.}.%M:%L|%replace{%msg}{'\s'}{' '}%n</Property>
     </Properties>
 
     <Appenders>
         <Console name="Console" target="SYSTEM_OUT">
-            <!--<PatternLayout pattern="${pattern}"/>-->
             <ThresholdFilter level="debug" onMatch="ACCEPT" onMismatch="DENY"/>
             <PatternLayout
                     pattern="%highlight{%d{yyyy-MM-dd HH:mm:ss.SSS}[%X{traceId}]|${hostName}|%-5level{lowerCase=true}|%t|%c|%msg%n}"/>
@@ -53,13 +52,12 @@
 
     <Loggers>
         <logger name="com.kuaidi100" level="debug"/>
-        <logger name="org.springframework" level="info"/>
+        <logger name="io.netty" level="debug"/>
         <!-- includeLocation设置成false不打印方法名及行号 -->
         <Root level="info" includeLocation="false">
             <AppenderRef ref="Console"/>
             <AppenderRef ref="info_file"/>
             <AppenderRef ref="error_file"/>
-            <AppenderRef ref="warn_file"/>
             <AppenderRef ref="debug_file"/>
         </Root>
     </Loggers>

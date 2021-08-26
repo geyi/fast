@@ -1,7 +1,2 @@
-#spring:
-#  redis:
-#    redisson:
-#      config: classpath:redisson.yaml
-
-#logging:
-#  config: classpath:log4j2.xml
+logging:
+  config: classpath:log4j2.xml

@@ -28,6 +28,8 @@ import io.netty.handler.codec.http.HttpVersion;
 import io.netty.util.CharsetUtil;
 import io.netty.util.concurrent.EventExecutor;
 import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -42,51 +44,72 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server {
 
-    private static String basePath;
-    private static int bossN;
-    private static int workerN;
-    private static final int baseNum = 10000000;
+    private static final Logger log = LoggerFactory.getLogger(Server.class);
 
-    private static final NioEventLoopGroup BOSS = new NioEventLoopGroup(bossN);
-    private static final NioEventLoopGroup WORKER = new NioEventLoopGroup(workerN);
-    private static Channel channel;
+    private String basePath;
+    private int bossN;
+    private int workerN;
+    private static final int BASE_NUM = 10000000;
+    private static final int FILE_SIZE = 1 << 30;
+    private static final String FILE_PREFIX = "ORDER_DATA_%d_%d";
 
-    private static final AtomicInteger EXECUTOR_NUM = new AtomicInteger(0);
-    private static Map<Integer, EventExecutorAttach> executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
-    private static EventExecutorAttach getAttach(EventExecutor executor) {
+    private NioEventLoopGroup boss;
+    private NioEventLoopGroup worker;
+    private Channel channel;
+
+    private AtomicInteger executorNum = new AtomicInteger(0);
+    private Map<Integer, EventExecutorAttach> executorAttachMap;
+    private EventExecutorAttach getAttach(EventExecutor executor) {
         EventExecutorAttach eventExecutorAttach = executorAttachMap.get(executor.hashCode());
         if (eventExecutorAttach == null) {
-            int num = EXECUTOR_NUM.getAndIncrement();
-            eventExecutorAttach = new EventExecutorAttach((byte) num, executor, new AtomicInteger(num * baseNum), 0);
+            int num = executorNum.getAndIncrement();
+            eventExecutorAttach = new EventExecutorAttach()
+                    .setNum((byte) num)
+                    .setExecutor(executor)
+                    .setOrderId(new AtomicInteger(num * BASE_NUM))
+                    .setWriteIndex(0)
+                    .setFileNum(new AtomicInteger(0));
             executorAttachMap.put(executor.hashCode(), eventExecutorAttach);
         }
         return eventExecutorAttach;
     }
-    private static int getOrderId(EventExecutor executor) {
+    private int getOrderId(EventExecutor executor) {
         return getAttach(executor).getOrderId().incrementAndGet();
     }
-    private static int getWriteIndex(EventExecutor executor) {
+    private int getWriteIndex(EventExecutor executor) {
         return getAttach(executor).getWriteIndex();
     }
-    private static void setWriteIndex(EventExecutor executor, int writeIndex) {
+    private void setWriteIndex(EventExecutor executor, int writeIndex) {
         getAttach(executor).setWriteIndex(writeIndex);
     }
+    private String getFileName(EventExecutor executor) {
+        EventExecutorAttach attach = getAttach(executor);
+        Byte num = attach.getNum();
+        AtomicInteger fileNum = attach.getFileNum();
+        return String.format(FILE_PREFIX, num, fileNum.get());
+    }
+    private void setFileNum(EventExecutor executor, int incrSize) {
+        EventExecutorAttach attach = getAttach(executor);
+        attach.getFileNum().addAndGet(incrSize);
+        // 产生一个新文件时必须重置写索引
+        attach.setWriteIndex(0);
+    }
 
-    private static Map<Byte, Map<Integer, OrderIndexData>> indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
-    private static Map<Integer, OrderIndexData> getIndexMap(EventExecutor executor) {
+    private Map<Byte, Map<Integer, OrderIndexData>> indexMap;
+    private Map<Integer, OrderIndexData> getIndexMap(EventExecutor executor) {
         Byte num = getAttach(executor).getNum();
         Map<Integer, OrderIndexData> idxMap = indexMap.get(num);
         if (idxMap == null) {
-            idxMap = new HashMap<>(baseNum);
+            idxMap = new HashMap<>(BASE_NUM);
             indexMap.put(num, idxMap);
         }
         return idxMap;
     }
-    private static void saveOrderData(EventExecutor executor, int orderId, OrderIndexData idxData) {
+    private void saveOrderIndexData(EventExecutor executor, int orderId, OrderIndexData idxData) {
         getIndexMap(executor).put(orderId, idxData);
     }
-    private static OrderIndexData getOrderData(int orderId) {
-        return indexMap.get((byte) (orderId / baseNum)).get(orderId);
+    private OrderIndexData getOrderData(int orderId) {
+        return indexMap.get((byte) (orderId / BASE_NUM)).get(orderId);
     }
 
     public String getBasePath() {
@@ -97,40 +120,47 @@ public class Server {
         this.basePath = basePath;
     }
 
-    public static int getBossN() {
+    public int getBossN() {
         return bossN;
     }
 
-    public static void setBossN(int bossN) {
-        Server.bossN = bossN;
+    public void setBossN(int bossN) {
+        this.bossN = bossN;
     }
 
-    public static int getWorkerN() {
+    public int getWorkerN() {
         return workerN;
     }
 
-    public static void setWorkerN(int workerN) {
-        Server.workerN = workerN;
+    public void setWorkerN(int workerN) {
+        this.workerN = workerN;
     }
 
-    public static NioEventLoopGroup getBoss() {
-        return BOSS;
+    public NioEventLoopGroup getBoss() {
+        return boss;
     }
 
-    public static NioEventLoopGroup getWorker() {
-        return WORKER;
+    public NioEventLoopGroup getWorker() {
+        return worker;
     }
 
-    public static Channel getChannel() {
+    public Channel getChannel() {
         return channel;
     }
 
-    public static void main(String[] args) throws Exception {
-        new Server().startServer(9001);
+    public Server(String basePath, int bossN, int workerN) {
+        this.basePath = basePath;
+        this.bossN = bossN;
+        this.workerN = workerN;
+        boss  = new NioEventLoopGroup(bossN);
+        worker = new NioEventLoopGroup(workerN);
+        executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
+        indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
     }
 
-    public ChannelFuture startServer(int port) throws Exception {
-        ServerBootstrap serverBootstrap = new ServerBootstrap().group(BOSS, WORKER)
+    public Channel startServer(int port) throws Exception {
+        final Server server = this;
+        ServerBootstrap serverBootstrap = new ServerBootstrap().group(boss, worker)
                 .channel(NioServerSocketChannel.class)
                 .childHandler(new ChannelInitializer<Channel>() {
                     @Override
@@ -138,22 +168,22 @@ public class Server {
                         ChannelPipeline pipeline = ch.pipeline();
                         pipeline.addLast(new HttpServerCodec());
                         pipeline.addLast(new HttpObjectAggregator(1 * 1024));
-                        pipeline.addLast(new RequestHandler());
+                        pipeline.addLast(new RequestHandler(server));
                     }
                 });
         ChannelFuture bindFuture = serverBootstrap.bind(new InetSocketAddress(port));
         channel = bindFuture.sync().channel();
-        System.out.println("server startup!!! bind port: " + port + ", basePath: " + basePath);
-        return bindFuture;
+        log.info("server startup!!! bind port: {}, basePath: {}", port, basePath);
+        return channel;
     }
 
     public void destroy() {
         if (channel != null) {
             channel.close().syncUninterruptibly();
         }
-        BOSS.shutdownGracefully();
-        WORKER.shutdownGracefully();
-        System.out.println("server destroy!!!");
+        boss.shutdownGracefully();
+        worker.shutdownGracefully();
+        log.info("server destroy!!!");
     }
 
     static class RequestHandler extends ChannelInboundHandlerAdapter {
@@ -163,14 +193,20 @@ public class Server {
         private static final String ACTION = "ACTION";
         private static final String ORDER_ID = "ORDER_ID";
 
+        private Server server;
+
+        public RequestHandler(Server server) {
+            this.server = server;
+        }
+
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
             FullHttpRequest request = (FullHttpRequest) msg;
-            if (!request.decoderResult().isSuccess()) {
-                System.out.println("request decode is not success");
+            /*if (!request.decoderResult().isSuccess()) {
+                log.error("request decode is not success");
                 this.sendError(ctx, HttpResponseStatus.BAD_REQUEST);
                 return;
-            }
+            }*/
 
             String uri = request.uri();
             Map<String, String> paramMap = this.parseQueryString(uri);
@@ -179,6 +215,8 @@ public class Server {
                 this.addNew(request, ctx, paramMap);
             } else if (FIND.equals(action)) {
                 this.findById(request, ctx, paramMap);
+            } else {
+                this.sendError(ctx, HttpResponseStatus.NOT_FOUND);
             }
         }
 
@@ -192,14 +230,31 @@ public class Server {
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             EventExecutor executor = ctx.executor();
-            int orderId = getOrderId(executor);
+            int orderId = server.getOrderId(executor);
             paramMap.put(ORDER_ID, String.valueOf(orderId));
+            String fileName = server.getFileName(executor);
             String orderInfo = JSONObject.toJSONString(paramMap);
             int length = orderInfo.getBytes().length;
-            int writeIndex = getWriteIndex(executor);
-            fileWrite(basePath + executor.hashCode(), orderInfo, writeIndex);
-            setWriteIndex(executor, length);
-            saveOrderData(executor, orderId, new OrderIndexData(String.valueOf(executor.hashCode()), writeIndex, length));
+            int writeIndex = server.getWriteIndex(executor);
+            if (writeIndex + length > FILE_SIZE) {
+                log.error("超出文件最大写索引");
+                server.setFileNum(executor, 1);
+                fileName = server.getFileName(executor);
+                writeIndex = server.getWriteIndex(executor);
+            }
+            int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);
+            server.setWriteIndex(executor, nextWriteIndex);
+            server.saveOrderIndexData(executor, orderId, new OrderIndexData(fileName, writeIndex, length));
+            log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
+                    paramMap.get("USER_ID"),
+                    paramMap.get("COM"),
+                    paramMap.get("NUM"),
+                    paramMap.get("SENDER_NAME"),
+                    paramMap.get("SENDER_MOBILE"),
+                    paramMap.get("SENDER_ADDR"),
+                    paramMap.get("RECEIVER_NAME"),
+                    paramMap.get("RECEIVER_MOBILE"),
+                    paramMap.get("RECEIVER_ADDR"));
 
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
@@ -217,14 +272,14 @@ public class Server {
 
         private void findById(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             Integer orderId = Integer.valueOf(paramMap.get(ORDER_ID));
-            OrderIndexData order = getOrderData(orderId);
+            OrderIndexData order = server.getOrderData(orderId);
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
             if (HttpUtil.isKeepAlive(request)) {
                 response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
             }
 
-            byte[] bytes = fileRead(basePath + order.getFilename(), order.getOffset(), order.getLength());
+            byte[] bytes = fileRead(server.basePath + order.getFileName(), order.getOffset(), order.getLength());
             ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytes.length);
             byteBuf.writeBytes(bytes);
             response.content().writeBytes(byteBuf);
@@ -260,14 +315,14 @@ public class Server {
             return ret;
         }
 
-        public static long fileWrite(String filePath, String content, int index) {
+        public static int fileWrite(String filePath, String content, int index) {
             File file = new File(filePath);
             RandomAccessFile randomAccessTargetFile;
             MappedByteBuffer map;
             try {
                 randomAccessTargetFile = new RandomAccessFile(file, "rw");
                 FileChannel targetFileChannel = randomAccessTargetFile.getChannel();
-                map = targetFileChannel.map(FileChannel.MapMode.READ_WRITE, 0, (long) 1024 * 1024 * 1024);
+                map = targetFileChannel.map(FileChannel.MapMode.READ_WRITE, 0, FILE_SIZE);
                 map.position(index);
                 map.put(content.getBytes());
                 return map.position();
@@ -275,26 +330,7 @@ public class Server {
                 e.printStackTrace();
             } finally {
             }
-            return 0L;
-        }
-
-        public static String fileRead(String filePath, long index) {
-            File file = new File(filePath);
-            RandomAccessFile randomAccessTargetFile;
-            //  操作系统提供的一个内存映射的机制的类
-            MappedByteBuffer map;
-            try {
-                randomAccessTargetFile = new RandomAccessFile(file, "r");
-                FileChannel targetFileChannel = randomAccessTargetFile.getChannel();
-                map = targetFileChannel.map(FileChannel.MapMode.READ_ONLY, 0, index);
-                byte[] byteArr = new byte[10 * 1024];
-                map.get(byteArr, 0, (int) index);
-                return new String(byteArr);
-            } catch (IOException e) {
-                e.printStackTrace();
-            } finally {
-            }
-            return "";
+            return 0;
         }
 
         public static byte[] fileRead(String filePath, int position, int length) {
@@ -305,18 +341,14 @@ public class Server {
                 randomAccessTargetFile = new RandomAccessFile(file, "r");
                 FileChannel targetFileChannel = randomAccessTargetFile.getChannel();
                 map = targetFileChannel.map(FileChannel.MapMode.READ_ONLY, position, position + length);
-                byte[] byteArr = new byte[length];
-                map.get(byteArr);
-                return byteArr;
+                byte[] bytes = new byte[length];
+                map.get(bytes);
+                return bytes;
             } catch (IOException e) {
                 e.printStackTrace();
             } finally {
             }
             return null;
-        }
-
-        public static void main(String[] args) {
-            System.out.println(fileRead("E:\\1390301622.txt", 2 * 1024));
         }
     }
 
@@ -325,64 +357,71 @@ public class Server {
         EventExecutor executor;
         AtomicInteger orderId;
         Integer writeIndex;
-
-        public EventExecutorAttach(Byte num, EventExecutor executor, AtomicInteger orderId, Integer writeIndex) {
-            this.num = num;
-            this.executor = executor;
-            this.orderId = orderId;
-            this.writeIndex = writeIndex;
-        }
+        AtomicInteger fileNum;
 
         public Byte getNum() {
             return num;
         }
 
-        public void setNum(Byte num) {
+        public EventExecutorAttach setNum(Byte num) {
             this.num = num;
+            return this;
         }
 
         public EventExecutor getExecutor() {
             return executor;
         }
 
-        public void setExecutor(EventExecutor executor) {
+        public EventExecutorAttach setExecutor(EventExecutor executor) {
             this.executor = executor;
+            return this;
         }
 
         public AtomicInteger getOrderId() {
             return orderId;
         }
 
-        public void setOrderId(AtomicInteger orderId) {
+        public EventExecutorAttach setOrderId(AtomicInteger orderId) {
             this.orderId = orderId;
+            return this;
         }
 
         public Integer getWriteIndex() {
             return writeIndex;
         }
 
-        public void setWriteIndex(Integer writeIndex) {
+        public EventExecutorAttach setWriteIndex(Integer writeIndex) {
             this.writeIndex = writeIndex;
+            return this;
+        }
+
+        public AtomicInteger getFileNum() {
+            return fileNum;
+        }
+
+        public EventExecutorAttach setFileNum(AtomicInteger fileNum) {
+            this.fileNum = fileNum;
+            return this;
         }
     }
 
     static class OrderIndexData {
-        String filename;
+        String fileName;
         Integer offset;
         Integer length;
 
-        public OrderIndexData(String filename, Integer offset, Integer length) {
-            this.filename = filename;
+        public OrderIndexData(String fileName, Integer offset, Integer length) {
+            this.fileName = fileName;
             this.offset = offset;
             this.length = length;
         }
 
-        public String getFilename() {
-            return filename;
+        public String getFileName() {
+            return fileName;
         }
 
-        public void setFilename(String filename) {
-            this.filename = filename;
+        public void setFileName(String fileName) {
+            this.fileName = fileName;
         }
 
         public Integer getOffset() {
