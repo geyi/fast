@@ -76,14 +76,25 @@ public class Server {
     private int getOrderId(EventExecutor executor) {
         return getAttach(executor).getOrderId().incrementAndGet();
     }
+    private int getOrderId(EventExecutorAttach attach) {
+        return attach.getOrderId().incrementAndGet();
+    }
     private int getWriteIndex(EventExecutor executor) {
         return getAttach(executor).getWriteIndex();
+    }
+    private int getWriteIndex(EventExecutorAttach attach) {
+        return attach.getWriteIndex();
     }
     private void setWriteIndex(EventExecutor executor, int writeIndex) {
         getAttach(executor).setWriteIndex(writeIndex);
     }
     private String getFileName(EventExecutor executor) {
         EventExecutorAttach attach = getAttach(executor);
+        Byte num = attach.getNum();
+        AtomicInteger fileNum = attach.getFileNum();
+        return String.format(FILE_PREFIX, num, fileNum.get());
+    }
+    private String getFileName(EventExecutorAttach attach) {
         Byte num = attach.getNum();
         AtomicInteger fileNum = attach.getFileNum();
         return String.format(FILE_PREFIX, num, fileNum.get());
@@ -173,7 +184,8 @@ public class Server {
                 });
         ChannelFuture bindFuture = serverBootstrap.bind(new InetSocketAddress(port));
         channel = bindFuture.sync().channel();
-        log.info("server startup!!! bind port: {}, basePath: {}", port, basePath);
+        log.info("server startup!!! bind port: {}, basePath: {}, bossN: {}, workN: {}",
+                port, basePath, bossN, workerN);
         return channel;
     }
 
@@ -230,17 +242,23 @@ public class Server {
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             EventExecutor executor = ctx.executor();
-            int orderId = server.getOrderId(executor);
+            EventExecutorAttach attach = server.getAttach(executor);
+//            int orderId = server.getOrderId(executor);
+            int orderId = server.getOrderId(attach);
             paramMap.put(ORDER_ID, String.valueOf(orderId));
-            String fileName = server.getFileName(executor);
+//            String fileName = server.getFileName(executor);
+            String fileName = server.getFileName(attach);
             String orderInfo = JSONObject.toJSONString(paramMap);
             int length = orderInfo.getBytes().length;
-            int writeIndex = server.getWriteIndex(executor);
+//            int writeIndex = server.getWriteIndex(executor);
+            int writeIndex = attach.getWriteIndex();
             if (writeIndex + length > FILE_SIZE) {
                 log.error("超出文件最大写索引");
                 server.setFileNum(executor, 1);
-                fileName = server.getFileName(executor);
-                writeIndex = server.getWriteIndex(executor);
+//                fileName = server.getFileName(executor);
+//                writeIndex = server.getWriteIndex(executor);
+                fileName = server.getFileName(attach);
+                writeIndex = attach.getWriteIndex();
             }
             int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);
             server.setWriteIndex(executor, nextWriteIndex);
