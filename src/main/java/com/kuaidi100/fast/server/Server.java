@@ -55,7 +55,6 @@ public class Server {
     // 512MB
     private static final int FILE_SIZE = 1 << 29;
     private static final String FILE_PREFIX = "ORDER_DATA_%d_%d";
-    private AtomicInteger orderAutoId = new AtomicInteger(0);
 
     private NioEventLoopGroup boss;
     private NioEventLoopGroup worker;
