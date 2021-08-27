@@ -159,7 +159,7 @@ public class Server {
 
     private Map<Integer, TimeoutBlockingQueue<String>> orderMap;
 
-    private TimeoutBlockingQueue<String> getOrderMap(EventExecutor executor) {
+    private TimeoutBlockingQueue<String> getOrderQueue(EventExecutor executor) {
         TimeoutBlockingQueue<String> orders = orderMap.get(executor.hashCode());
         if (orders == null) {
             String[] items = new String[2000];
@@ -169,8 +169,25 @@ public class Server {
         return orders;
     }
 
-    private void saveOrderData(EventExecutor executor, String order) throws InterruptedException {
-        TimeoutBlockingQueue<String> orders = getOrderMap(executor);
+    private void putOrderData(EventExecutor executor, String order) throws InterruptedException {
+        TimeoutBlockingQueue<String> orders = getOrderQueue(executor);
+        orders.put(order);
+    }
+
+    private Map<Integer, TimeoutBlockingQueue<String>> saveIndexMap;
+
+    private TimeoutBlockingQueue<String> getSaveIndexQueue(EventExecutor executor) {
+        TimeoutBlockingQueue<String> indexes = saveIndexMap.get(executor.hashCode());
+        if (indexes == null) {
+            String[] items = new String[2000];
+            indexes = new TimeoutBlockingQueue<>(items, 1000, 1000);
+            orderMap.put(executor.hashCode(), indexes);
+        }
+        return indexes;
+    }
+
+    private void putIndexData(EventExecutor executor, String order) throws InterruptedException {
+        TimeoutBlockingQueue<String> orders = getOrderQueue(executor);
         orders.put(order);
     }
 
@@ -183,6 +200,7 @@ public class Server {
         executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
         indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
         orderMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
+        saveIndexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
     }
 
     public Channel startServer(int port) throws Exception {
@@ -304,12 +322,50 @@ public class Server {
             ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         }
 
+        private void batchWriteIndex(EventExecutor executor, OrderIndexData idxData) {
+            try {
+                server.putIndexData(executor, JSONObject.toJSONString(idxData));
+                TimeoutBlockingQueue<String> queue = server.getSaveIndexQueue(executor);
+                List<String> indexList = queue.poll();
+                if (indexList != null) {
+                    EventExecutorAttach attach = server.getAttach(executor);
+                    int writeIndex = attach.getRealWriteIndex();
+                    String fileName = server.getRealFileName(attach);
+
+                    StringBuilder sb = new StringBuilder();
+                    for (String order : indexList) {
+                        // 如果拼上下一个订单信息会超出文件大小，则将前面的内容先写入文件
+                        if (writeIndex + sb.length() + order.length() > FILE_SIZE) {
+                            if (sb.length() > 0) {
+                                int nextWriteIndex = fileWrite(server.basePath + fileName, sb.toString(), writeIndex);
+                                server.setRealWriteIndex(attach, nextWriteIndex);
+                            }
+
+                            log.error("超出文件最大写索引，重新生成一个文件");
+                            server.setRealFileNum(executor, 1);
+                            writeIndex = attach.getRealWriteIndex();
+                            fileName = server.getRealFileName(attach);
+
+                            // 让缓冲区从0开始
+                            sb.setLength(0);
+                        }
+                        sb.append(order);
+                    }
+                    int nextWriteIndex = fileWrite(server.basePath + fileName, sb.toString(), writeIndex);
+                    server.setRealWriteIndex(attach, nextWriteIndex);
+                    indexList = null;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+
         private void batchWrite(EventExecutor executor, String orderInfo) {
             try {
                 // 订单信息写入队列
-                server.saveOrderData(executor, orderInfo);
+                server.putOrderData(executor, orderInfo);
 
-                TimeoutBlockingQueue<String> queue = server.getOrderMap(executor);
+                TimeoutBlockingQueue<String> queue = server.getOrderQueue(executor);
                 List<String> orders = queue.poll();
                 if (orders != null) {
                     EventExecutorAttach attach = server.getAttach(executor);
@@ -337,6 +393,7 @@ public class Server {
                     }
                     int nextWriteIndex = fileWrite(server.basePath + fileName, sb.toString(), writeIndex);
                     server.setRealWriteIndex(attach, nextWriteIndex);
+                    orders = null;
                 }
             } catch (InterruptedException e) {
                 e.printStackTrace();
