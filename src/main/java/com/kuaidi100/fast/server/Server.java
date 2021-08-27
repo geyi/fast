@@ -39,6 +39,7 @@ import java.net.InetSocketAddress;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -51,7 +52,8 @@ public class Server {
     private int bossN;
     private int workerN;
     private static final int BASE_NUM = 10000000;
-    private static final int FILE_SIZE = 1 << 30;
+    // 512MB
+    private static final int FILE_SIZE = 1 << 29;
     private static final String FILE_PREFIX = "ORDER_DATA_%d_%d";
     private AtomicInteger orderAutoId = new AtomicInteger(0);
 
@@ -71,7 +73,9 @@ public class Server {
                     .setExecutor(executor)
                     .setOrderId(new AtomicInteger(num * BASE_NUM))
                     .setWriteIndex(0)
-                    .setFileNum(new AtomicInteger(0));
+                    .setFileNum(new AtomicInteger(0))
+                    .setRealWriteIndex(0)
+                    .setRealFileNum(new AtomicInteger(0));
             executorAttachMap.put(executor.hashCode(), eventExecutorAttach);
         }
         return eventExecutorAttach;
@@ -97,6 +101,10 @@ public class Server {
         getAttach(executor).setWriteIndex(writeIndex);
     }
 
+    private void setRealWriteIndex(EventExecutorAttach attach, int writeIndex) {
+        attach.setRealWriteIndex(writeIndex);
+    }
+
     private String getFileName(EventExecutor executor) {
         EventExecutorAttach attach = getAttach(executor);
         Byte num = attach.getNum();
@@ -110,11 +118,24 @@ public class Server {
         return String.format(FILE_PREFIX, num, fileNum.get());
     }
 
+    private String getRealFileName(EventExecutorAttach attach) {
+        Byte num = attach.getNum();
+        AtomicInteger fileNum = attach.getRealFileNum();
+        return String.format(FILE_PREFIX, num, fileNum.get());
+    }
+
     private void setFileNum(EventExecutor executor, int incrSize) {
         EventExecutorAttach attach = getAttach(executor);
         attach.getFileNum().addAndGet(incrSize);
         // 产生一个新文件时必须重置写索引
         attach.setWriteIndex(0);
+    }
+
+    private void setRealFileNum(EventExecutor executor, int incrSize) {
+        EventExecutorAttach attach = getAttach(executor);
+        attach.getRealFileNum().addAndGet(incrSize);
+        // 产生一个新文件时必须重置写索引
+        attach.setRealWriteIndex(0);
     }
 
     private Map<Byte, Map<Integer, OrderIndexData>> indexMap;
@@ -133,8 +154,25 @@ public class Server {
         getIndexMap(executor).put(orderId, idxData);
     }
 
-    private OrderIndexData getOrderData(int orderId) {
+    private OrderIndexData getOrderIndex(int orderId) {
         return indexMap.get((byte) (orderId / BASE_NUM)).get(orderId);
+    }
+
+    private Map<Integer, TimeoutBlockingQueue<String>> orderMap;
+
+    private TimeoutBlockingQueue<String> getOrderMap(EventExecutor executor) {
+        TimeoutBlockingQueue<String> orders = orderMap.get(executor.hashCode());
+        if (orders == null) {
+            String[] items = new String[2000];
+            orders = new TimeoutBlockingQueue<>(items, 1000, 1000);
+            orderMap.put(executor.hashCode(), orders);
+        }
+        return orders;
+    }
+
+    private void saveOrderData(EventExecutor executor, String order) throws InterruptedException {
+        TimeoutBlockingQueue<String> orders = getOrderMap(executor);
+        orders.put(order);
     }
 
     public Server(String basePath, int bossN, int workerN) {
@@ -145,6 +183,7 @@ public class Server {
         worker = new NioEventLoopGroup(workerN);
         executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
         indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
+        orderMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
     }
 
     public Channel startServer(int port) throws Exception {
@@ -221,52 +260,93 @@ public class Server {
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             EventExecutor executor = ctx.executor();
-            executor.execute(() -> {
-                EventExecutorAttach attach = server.getAttach(executor);
-                int orderId = server.getOrderId(attach);
-                paramMap.put(ORDER_ID, String.valueOf(orderId));
-                String fileName = server.getFileName(attach);
-                String orderInfo = JSONObject.toJSONString(paramMap);
-                int length = orderInfo.getBytes().length;
-                int writeIndex = attach.getWriteIndex();
-                if (writeIndex + length > FILE_SIZE) {
-                    log.error("超出文件最大写索引");
-                    server.setFileNum(executor, 1);
-                    fileName = server.getFileName(attach);
-                    writeIndex = attach.getWriteIndex();
-                }
-                int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);
-                server.setWriteIndex(executor, nextWriteIndex);
-                server.saveOrderIndexData(executor, orderId, new OrderIndexData(fileName, writeIndex, length));
-                /*log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
-                        paramMap.get("USER_ID"),
-                        paramMap.get("COM"),
-                        paramMap.get("NUM"),
-                        paramMap.get("SENDER_NAME"),
-                        paramMap.get("SENDER_MOBILE"),
-                        paramMap.get("SENDER_ADDR"),
-                        paramMap.get("RECEIVER_NAME"),
-                        paramMap.get("RECEIVER_MOBILE"),
-                        paramMap.get("RECEIVER_ADDR"));*/
+            EventExecutorAttach attach = server.getAttach(executor);
 
-                FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-                response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
-                if (HttpUtil.isKeepAlive(request)) {
-                    response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-                }
+            int orderId = server.getOrderId(attach);
+            int writeIndex = attach.getWriteIndex();
+            String fileName = server.getFileName(attach);
 
-                byte[] resp = String.format(SUCC_RESP, orderId).getBytes();
-                ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
-                byteBuf.writeBytes(resp);
-                response.content().writeBytes(byteBuf);
-                byteBuf.release();
-                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-            });
+            paramMap.put(ORDER_ID, String.valueOf(orderId));
+            String orderInfo = JSONObject.toJSONString(paramMap);
+            int length = orderInfo.getBytes().length;
+
+            if (writeIndex + length > FILE_SIZE) {
+                log.error("超出文件最大写索引");
+                server.setFileNum(executor, 1);
+                writeIndex = attach.getWriteIndex();
+            }
+            /*int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);*/
+            server.setWriteIndex(executor, writeIndex + length);
+            server.saveOrderIndexData(executor, orderId, new OrderIndexData(fileName, writeIndex, length));
+            log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
+                    paramMap.get("USER_ID"),
+                    paramMap.get("COM"),
+                    paramMap.get("NUM"),
+                    paramMap.get("SENDER_NAME"),
+                    paramMap.get("SENDER_MOBILE"),
+                    paramMap.get("SENDER_ADDR"),
+                    paramMap.get("RECEIVER_NAME"),
+                    paramMap.get("RECEIVER_MOBILE"),
+                    paramMap.get("RECEIVER_ADDR"));
+
+            executor.execute(() -> batchWrite(executor, orderInfo));
+
+            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+            if (HttpUtil.isKeepAlive(request)) {
+                response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+            }
+
+            byte[] resp = String.format(SUCC_RESP, orderId).getBytes();
+            ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
+            byteBuf.writeBytes(resp);
+            response.content().writeBytes(byteBuf);
+            byteBuf.release();
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        }
+
+        private void batchWrite(EventExecutor executor, String orderInfo) {
+            try {
+                // 订单信息写入队列
+                server.saveOrderData(executor, orderInfo);
+
+                TimeoutBlockingQueue<String> queue = server.getOrderMap(executor);
+                List<String> orders = queue.poll();
+                if (orders != null) {
+                    EventExecutorAttach attach = server.getAttach(executor);
+                    int writeIndex = attach.getRealWriteIndex();
+                    String fileName = server.getRealFileName(attach);
+
+                    StringBuilder sb = new StringBuilder();
+                    for (String order : orders) {
+                        // 如果拼上下一个订单信息会超出文件大小，则将前面的内容先写入文件
+                        if (writeIndex + sb.length() + order.length() > FILE_SIZE) {
+                            if (sb.length() > 0) {
+                                int nextWriteIndex = fileWrite(server.basePath + fileName, sb.toString(), writeIndex);
+                                server.setRealWriteIndex(attach, nextWriteIndex);
+                            }
+
+                            log.error("超出文件最大写索引，重新生成一个文件");
+                            server.setRealFileNum(executor, 1);
+                            writeIndex = attach.getRealWriteIndex();
+                            fileName = server.getRealFileName(attach);
+
+                            // 让缓冲区从0开始
+                            sb.setLength(0);
+                        }
+                        sb.append(order);
+                    }
+                    int nextWriteIndex = fileWrite(server.basePath + fileName, sb.toString(), writeIndex);
+                    server.setRealWriteIndex(attach, nextWriteIndex);
+                }
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
         }
 
         private void findById(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             Integer orderId = Integer.valueOf(paramMap.get(ORDER_ID));
-            OrderIndexData order = server.getOrderData(orderId);
+            OrderIndexData order = server.getOrderIndex(orderId);
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
             if (HttpUtil.isKeepAlive(request)) {
@@ -366,6 +446,8 @@ public class Server {
         AtomicInteger orderId;
         Integer writeIndex;
         AtomicInteger fileNum;
+        Integer realWriteIndex;
+        AtomicInteger realFileNum;
 
         public Byte getNum() {
             return num;
@@ -409,6 +491,24 @@ public class Server {
 
         public EventExecutorAttach setFileNum(AtomicInteger fileNum) {
             this.fileNum = fileNum;
+            return this;
+        }
+
+        public Integer getRealWriteIndex() {
+            return realWriteIndex;
+        }
+
+        public EventExecutorAttach setRealWriteIndex(Integer realWriteIndex) {
+            this.realWriteIndex = realWriteIndex;
+            return this;
+        }
+
+        public AtomicInteger getRealFileNum() {
+            return realFileNum;
+        }
+
+        public EventExecutorAttach setRealFileNum(AtomicInteger realFileNum) {
+            this.realFileNum = realFileNum;
             return this;
         }
     }

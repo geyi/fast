@@ -92,12 +92,38 @@ public class TimeoutBlockingQueue<T> {
         }
     }
 
+    public List<T> poll() throws InterruptedException {
+        lock.lock();
+        try {
+            if (count < limit) {
+                return null;
+            }
+
+            List<T> list = new ArrayList<>(limit);
+            for (int i = 0; i < limit; i++) {
+                T item = items[takeptr];
+                if (item == null) {
+                    break;
+                }
+                list.add(item);
+                if (++takeptr == items.length) {
+                    takeptr = 0;
+                }
+                --count;
+            }
+            notFull.signal();
+            return list;
+        } finally {
+            lock.unlock();
+        }
+    }
+
     public static void main(String[] args) {
         // 测试
         TimeoutBlockingQueue<Object> queue = new TimeoutBlockingQueue<>(new Object[100], 10, 500);
 
         Thread putThread = new Thread(() -> {
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < 200; i++) {
                 try {
                     queue.put(new Object());
                     System.out.println("put " + i);
@@ -108,7 +134,7 @@ public class TimeoutBlockingQueue<T> {
             }
         });
         Thread putThread2 = new Thread(() -> {
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < 200; i++) {
                 try {
                     queue.put(new Object());
                     System.out.println("put " + i);
@@ -123,7 +149,12 @@ public class TimeoutBlockingQueue<T> {
             try {
                 int total = 0;
                 for (int i = 0; i < 100; i++) {
-                    List<Object> list = queue.take();
+                    List<Object> list = queue.poll();
+                    if (list == null) {
+                        System.out.println("null");
+                        TimeUnit.SECONDS.sleep(1);
+                        continue;
+                    }
                     total += list.size();
                     System.out.println("take " + list.size() + ", total " + total);
                 }
