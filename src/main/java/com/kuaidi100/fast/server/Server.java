@@ -63,7 +63,7 @@ public class Server {
     private static final int BASE_NUM = 10000000;
     // 512MB
     private static final int FILE_SIZE = 1 << 29;
-    private static final String FILE_PREFIX = "ORDER_DATA_%d_%d";
+    private static final String FILE_PREFIX = "ORDER_DATA_%s_%d";
 
     private NioEventLoopGroup boss;
     private NioEventLoopGroup worker;
@@ -129,20 +129,21 @@ public class Server {
     private String getFileName(EventExecutorAttach attach) {
         Byte num = attach.getNum();
         AtomicInteger fileNum = attach.getFileNum();
-        return String.format(FILE_PREFIX, num, fileNum.get());
+        return String.format(FILE_PREFIX, getSuffix(num), fileNum.get());
     }
 
     private String getRealFileName(EventExecutorAttach attach) {
         Byte num = attach.getNum();
         AtomicInteger fileNum = attach.getRealFileNum();
-        return String.format(FILE_PREFIX, num, fileNum.get());
+        return String.format(FILE_PREFIX, getSuffix(num), fileNum.get());
     }
 
     private String getIdxFileName(EventExecutorAttach attach) {
         Byte num = attach.getNum();
         AtomicInteger fileNum = attach.getIdxFileNum();
         String suffix = getSuffix(fileNum.get());
-        return "mobile_" + num + "_" + suffix;
+        String exeNum = getSuffix(num);
+        return "mobile_" + exeNum + "_" + suffix;
     }
 
     private void setFileNum(EventExecutor executor, int incrSize) {
@@ -165,26 +166,6 @@ public class Server {
         // 产生一个新文件时必须重置写索引
         attach.setIdxWriteIndex(0);
     }
-
-    /*private Map<Byte, Map<Integer, Index>> indexMap;
-
-    private Map<Integer, Index> getIndexMap(EventExecutor executor) {
-        Byte num = getAttach(executor).getNum();
-        Map<Integer, Index> idxMap = indexMap.get(num);
-        if (idxMap == null) {
-            idxMap = new HashMap<>((int) (BASE_NUM / .75) + 1);
-            indexMap.put(num, idxMap);
-        }
-        return idxMap;
-    }
-
-    private void saveOrderIndexData(EventExecutor executor, int orderId, Index idxData) {
-        getIndexMap(executor).put(orderId, idxData);
-    }
-
-    private Index getOrderIndex(int orderId) {
-        return indexMap.get((byte) (orderId / BASE_NUM)).get(orderId);
-    }*/
 
     private Map<String, Queue<Index>> mobileIdxMap;
 
@@ -243,7 +224,6 @@ public class Server {
         boss = new NioEventLoopGroup(bossN);
         worker = new NioEventLoopGroup(workerN);
         executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
-        /*indexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);*/
         orderMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
         saveIndexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
         mobileIdxMap = new ConcurrentHashMap<>(65535);
@@ -256,7 +236,7 @@ public class Server {
         File idxPath = new File(path);
         File[] files = idxPath.listFiles();
         int position = 0;
-        int length = 75;
+        int length = 77;
         for (int i = 0, limit = files.length; i < limit; i++) {
             File file = files[i];
             if (!file.getName().startsWith("mobile")) {
@@ -312,7 +292,7 @@ public class Server {
     static class RequestHandler extends ChannelInboundHandlerAdapter {
         private static final String SUCC_RESP = "{\"STATUS\":\"SUCCESS\",\"ORDER_ID\":%d}";
         private static final String ADD_NEW = "ADDNEW";
-        private static final String FIND = "FINDBYID";
+        private static final String FIND = "FINDBYMOBILE";
         private static final String ACTION = "ACTION";
         private static final String ORDER_ID = "ORDER_ID";
 
@@ -337,7 +317,7 @@ public class Server {
             if (ADD_NEW.equals(action)) {
                 this.addNew(request, ctx, paramMap);
             } else if (FIND.equals(action)) {
-                this.findById(request, ctx, paramMap);
+                this.find(request, ctx, paramMap);
             } else {
                 this.sendError(ctx, HttpResponseStatus.NOT_FOUND);
             }
@@ -502,7 +482,7 @@ public class Server {
             }
         }
 
-        private void findById(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
+        private void find(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             String sMobile = paramMap.get("SENDER_MOBILE");
             Queue<Index> idxQueue = server.getIdxQueue(sMobile);
             FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
@@ -826,6 +806,9 @@ public class Server {
 //            Index index = new Index("order_data_00", 1, 1);
 //            byte[] bytes = index.toByte();
 //            System.out.println(new String(bytes, "iso8859-1"));
+            String s  = "{\"fileName\":\"ORDER_DATA_000_0\",\"length\":00000273,\"offset\":000000,\"value\":\"13910000000\"}";
+            Index index = JSONObject.parseObject(s, Index.class);
+            System.out.println();
         }
     }
 
@@ -1058,6 +1041,16 @@ public class Server {
 
     static final String S = "000";
     public static String getSuffix(int num) {
+        String numStr = String.valueOf(num);
+        int len = numStr.length();
+        if (len > S.length()) {
+            throw new RuntimeException("num is error");
+        }
+        return S.substring(0, S.length() - numStr.length()) + num;
+    }
+
+    static final String INT = "000000000";
+    public static String getInt(int num) {
         String numStr = String.valueOf(num);
         int len = numStr.length();
         if (len > S.length()) {
