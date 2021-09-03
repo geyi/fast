@@ -188,7 +188,7 @@ public class Server {
         TimeoutBlockingQueue<String> orders = orderMap.get(executor.hashCode());
         if (orders == null) {
             String[] items = new String[2000];
-            orders = new TimeoutBlockingQueue<>(items, 1, 1000);
+            orders = new TimeoutBlockingQueue<>(items, 100, 1000);
             orderMap.put(executor.hashCode(), orders);
         }
         return orders;
@@ -206,7 +206,7 @@ public class Server {
         if (indexes == null) {
 
             Index[] items = new Index[2000];
-            indexes = new TimeoutBlockingQueue<>(items, 1, 1000);
+            indexes = new TimeoutBlockingQueue<>(items, 100, 1000);
             saveIndexMap.put(executor.hashCode(), indexes);
         }
         return indexes;
@@ -351,10 +351,7 @@ public class Server {
                 server.setFileNum(executor, 1);
                 writeIndex = attach.getWriteIndex();
             }
-            /*int nextWriteIndex = fileWrite(server.basePath + fileName, orderInfo, writeIndex);*/
-            /*server.setWriteIndex(executor, writeIndex + length);*/
             attach.setWriteIndex(writeIndex + length);
-            /*server.saveOrderIndexData(executor, orderId, new Index(fileName, writeIndex, length));*/
             Index index = new Index(fileName, getInt(writeIndex), getInt(length), sMobile);
             server.saveMobileIdx(sMobile, index);
             log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
