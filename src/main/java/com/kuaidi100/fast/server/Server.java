@@ -38,7 +38,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.Serializable;
-import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -49,6 +48,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -386,7 +386,7 @@ public class Server {
                 byteBuf.writeBytes(resp);
                 response.content().writeBytes(byteBuf);
                 byteBuf.release();
-                /*long take = System.currentTimeMillis() - start;
+                long take = System.currentTimeMillis() - start;
                 ThreadPoolUtils.getInstance().updateTotalTime(take);
                 try {
                     long sleep = 1990 - take;
@@ -397,7 +397,7 @@ public class Server {
                     }
                 } catch (InterruptedException e) {
                     e.printStackTrace();
-                }*/
+                }
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
             });
         }
