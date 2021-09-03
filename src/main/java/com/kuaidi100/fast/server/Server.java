@@ -398,6 +398,7 @@ public class Server {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
+                log.info("take: {}", System.currentTimeMillis() - start);
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
             });
         }

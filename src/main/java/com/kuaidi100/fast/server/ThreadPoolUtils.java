@@ -47,8 +47,8 @@ public class ThreadPoolUtils {
             corePoolSize = availableProcessors << 4;
             maxPoolSize = availableProcessors << 5;
         } else {
-            corePoolSize = availableProcessors << 3;
-            maxPoolSize = availableProcessors << 4;
+            corePoolSize = 16384;
+            maxPoolSize = 20000;
         }
         initThreadPool(corePoolSize, maxPoolSize, 200000);
     }
@@ -58,7 +58,7 @@ public class ThreadPoolUtils {
             synchronized (executorLock) {
                 if (executor == null) {
                     log.info("corePoolSize: {}, maxPoolSize: {}, queueSize: {}", corePoolSize, maxPoolSize, queueSize);
-                    executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 200, TimeUnit.MILLISECONDS,
+                    executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 2, TimeUnit.SECONDS,
                             new ArrayBlockingQueue<>(queueSize),
                             new ThreadFactoryBuilder().setNameFormat("fast-%d").build(),
                             new ThreadPoolExecutor.CallerRunsPolicy());
@@ -95,14 +95,14 @@ public class ThreadPoolUtils {
         if (executor == null) {
             initParam();
         }
-        log.debug("activeCount: {}", executor.getActiveCount());
-        log.debug("completedTaskCount: {}", executor.getCompletedTaskCount());
-        log.debug("taskCount: {}", executor.getTaskCount());
-        log.debug("queueSize: {}", executor.getQueue().size());
+//        log.debug("activeCount: {}", executor.getActiveCount());
+//        log.debug("completedTaskCount: {}", executor.getCompletedTaskCount());
+//        log.debug("taskCount: {}", executor.getTaskCount());
+//        log.debug("queueSize: {}", executor.getQueue().size());
         int queueSize = executor.getQueue().size();
-        if (queueSize >= 100) {
+        if (queueSize >= 10) {
             int coreSize = executor.getCorePoolSize() << 1;
-            if (coreSize <= 8192) {
+            if (coreSize <= 16384) {
                 executor.setCorePoolSize(coreSize);
             }
             log.warn("queueSize: {}, corePoolSize: {}", queueSize, executor.getCorePoolSize());
