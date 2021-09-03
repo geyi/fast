@@ -236,7 +236,7 @@ public class Server {
         File idxPath = new File(path);
         File[] files = idxPath.listFiles();
         int position = 0;
-        int length = 77;
+        int length = 95;
         for (int i = 0, limit = files.length; i < limit; i++) {
             File file = files[i];
             if (!file.getName().startsWith("mobile")) {
@@ -355,7 +355,7 @@ public class Server {
             /*server.setWriteIndex(executor, writeIndex + length);*/
             attach.setWriteIndex(writeIndex + length);
             /*server.saveOrderIndexData(executor, orderId, new Index(fileName, writeIndex, length));*/
-            Index index = new Index(fileName, writeIndex, length, sMobile);
+            Index index = new Index(fileName, getInt(writeIndex), getInt(length), sMobile);
             server.saveMobileIdx(sMobile, index);
             log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
                     paramMap.get("USER_ID"),
@@ -368,11 +368,12 @@ public class Server {
                     paramMap.get("RECEIVER_MOBILE"),
                     paramMap.get("RECEIVER_ADDR"));
 
-            /*executor.execute(() -> batchWrite(executor, orderInfo));*/
-
-            ThreadPoolUtils.getInstance().execute(() -> {
+            executor.execute(() -> {
                 batchWrite(executor, orderInfo);
                 batchWriteIndex(executor, index);
+            });
+
+            ThreadPoolUtils.getInstance().execute(() -> {
 
                 FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
                 response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
@@ -502,7 +503,7 @@ public class Server {
                     if (i >= limit) {
                         break;
                     }
-                    byte[] bytes = fileRead(server.basePath + index.getFileName(), index.getOffset(), index.getLength());
+                    byte[] bytes = fileRead(server.basePath + index.getFileName(), Integer.parseInt(index.getOffset()), Integer.parseInt(index.getLength()));
                     list.add(JSONObject.parseObject(new String(bytes)));
                     i++;
                 }
@@ -745,14 +746,14 @@ public class Server {
 
     static class Index {
         String fileName;
-        int offset;
-        int length;
+        String offset;
+        String length;
         String value;
 
         public Index() {
         }
 
-        public Index(String fileName, int offset, int length, String value) {
+        public Index(String fileName, String offset, String length, String value) {
             this.fileName = fileName;
             this.offset = offset;
             this.length = length;
@@ -767,19 +768,19 @@ public class Server {
             this.fileName = fileName;
         }
 
-        public int getOffset() {
+        public String getOffset() {
             return offset;
         }
 
-        public void setOffset(int offset) {
+        public void setOffset(String offset) {
             this.offset = offset;
         }
 
-        public int getLength() {
+        public String getLength() {
             return length;
         }
 
-        public void setLength(int length) {
+        public void setLength(String length) {
             this.length = length;
         }
 
@@ -789,26 +790,6 @@ public class Server {
 
         public void setValue(String value) {
             this.value = value;
-        }
-
-        public byte[] toByte() {
-            int len = fileName.length() + 8;
-            ByteBuf byteBuf = ByteBufAllocator.DEFAULT.buffer(len);
-            byteBuf.writeBytes(fileName.getBytes());
-            byteBuf.writeInt(offset);
-            byteBuf.writeInt(length);
-            byte[] ret = new byte[len];
-            byteBuf.readBytes(ret);
-            return ret;
-        }
-
-        public static void main(String[] args) throws UnsupportedEncodingException {
-//            Index index = new Index("order_data_00", 1, 1);
-//            byte[] bytes = index.toByte();
-//            System.out.println(new String(bytes, "iso8859-1"));
-            String s  = "{\"fileName\":\"ORDER_DATA_000_0\",\"length\":00000273,\"offset\":000000,\"value\":\"13910000000\"}";
-            Index index = JSONObject.parseObject(s, Index.class);
-            System.out.println();
         }
     }
 
@@ -1053,9 +1034,9 @@ public class Server {
     public static String getInt(int num) {
         String numStr = String.valueOf(num);
         int len = numStr.length();
-        if (len > S.length()) {
+        if (len > INT.length()) {
             throw new RuntimeException("num is error");
         }
-        return S.substring(0, S.length() - numStr.length()) + num;
+        return INT.substring(0, INT.length() - numStr.length()) + num;
     }
 }
