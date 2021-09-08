@@ -50,7 +50,7 @@ public class ThreadPoolUtils {
             corePoolSize = 1024;
             maxPoolSize = 1024;
         }
-        initThreadPool(corePoolSize, maxPoolSize, 200000);
+        initThreadPool(corePoolSize, maxPoolSize, 20000);
     }
 
     public void initThreadPool(int corePoolSize, int maxPoolSize, int queueSize) {

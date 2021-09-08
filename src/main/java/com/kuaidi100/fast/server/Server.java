@@ -1,7 +1,5 @@
 package com.kuaidi100.fast.server;
 
-import co.paralleluniverse.fibers.Fiber;
-import co.paralleluniverse.strands.SuspendableRunnable;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.annotation.JSONField;
 import io.netty.bootstrap.ServerBootstrap;
@@ -51,7 +49,6 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.DelayQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -82,22 +79,18 @@ public class Server {
             int num = executorNum.getAndIncrement();
             Thread thread = new Thread(() -> {
                 DelayQueue<AddNewRespData> dataQueue = getRespDataQueue(executor);
+                ThreadPoolUtils threadPoolUtils = ThreadPoolUtils.getInstance();
                 while (true) {
-                    AddNewRespData poll = dataQueue.poll();
-                    if (poll == null) {
+                    AddNewRespData respData = dataQueue.poll();
+                    if (respData == null) {
                         continue;
                     }
-
-                    ThreadPoolUtils.getInstance().execute(() -> {
-                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-                        response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
-                        byte[] resp = String.format(SUCC_RESP, poll.getOrderId()).getBytes();
-                        ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
-                        byteBuf.writeBytes(resp);
-                        response.content().writeBytes(byteBuf);
-                        byteBuf.release();
-                        poll.getCtx().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-                    });
+                    // 队列大于0则自己处理，避免入队出队的操作
+                    if (threadPoolUtils.getQueueSize() > 0) {
+                        resp(respData);
+                    } else {
+                        threadPoolUtils.execute(() -> resp(respData));
+                    }
                 }
             });
             eventExecutorAttach = new EventExecutorAttach()
@@ -115,6 +108,17 @@ public class Server {
             executorAttachMap.put(executor.hashCode(), eventExecutorAttach);
         }
         return eventExecutorAttach;
+    }
+
+    private void resp(AddNewRespData respData) {
+        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+        byte[] resp = String.format(SUCC_RESP, respData.getOrderId()).getBytes();
+        ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
+        byteBuf.writeBytes(resp);
+        response.content().writeBytes(byteBuf);
+        byteBuf.release();
+        respData.getCtx().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 
     private int getOrderId(EventExecutor executor) {
@@ -376,23 +380,24 @@ public class Server {
             EventExecutor executor = ctx.executor();
             EventExecutorAttach attach = server.getAttach(executor);
 
-            String sMobile = paramMap.get("SENDER_MOBILE");
             int orderId = server.getOrderId(attach);
-            int writeIndex = attach.getWriteIndex();
-            String fileName = server.getFileName(attach);
-
             paramMap.put(ORDER_ID, String.valueOf(orderId));
             String orderInfo = JSONObject.toJSONString(paramMap);
             int length = orderInfo.getBytes().length;
 
+            int writeIndex = attach.getWriteIndex();
             if (writeIndex + length > FILE_SIZE) {
                 log.error("超出文件最大写索引");
                 server.setFileNum(executor, 1);
                 writeIndex = attach.getWriteIndex();
             }
             attach.setWriteIndex(writeIndex + length);
+
+            String fileName = server.getFileName(attach);
+            String sMobile = paramMap.get("SENDER_MOBILE");
             Index index = new Index(fileName, getInt(writeIndex), getInt(length), sMobile);
             server.saveMobileIdx(sMobile, index);
+
             log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
                     paramMap.get("USER_ID"),
                     paramMap.get("COM"),
@@ -1068,22 +1073,24 @@ public class Server {
     }
 
     static final String S = "000";
+    static final int S_LEN = S.length();
     public static String getSuffix(int num) {
         String numStr = String.valueOf(num);
         int len = numStr.length();
         if (len > S.length()) {
             throw new RuntimeException("num is error");
         }
-        return S.substring(0, S.length() - numStr.length()) + num;
+        return S.substring(0, S_LEN - numStr.length()) + num;
     }
 
     static final String INT = "000000000";
+    static final int INT_LEN = INT.length();
     public static String getInt(int num) {
         String numStr = String.valueOf(num);
         int len = numStr.length();
         if (len > INT.length()) {
             throw new RuntimeException("num is error");
         }
-        return INT.substring(0, INT.length() - numStr.length()) + num;
+        return INT.substring(0, INT_LEN - numStr.length()) + num;
     }
 }
