@@ -50,6 +50,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.DelayQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
@@ -66,6 +67,7 @@ public class Server {
     // 512MB
     private static final int FILE_SIZE = 1 << 29;
     private static final String FILE_PREFIX = "ORDER_DATA_%s_%d";
+    private static final String SUCC_RESP = "{\"STATUS\":\"SUCCESS\",\"ORDER_ID\":%d}";
 
     private NioEventLoopGroup boss;
     private NioEventLoopGroup worker;
@@ -78,6 +80,26 @@ public class Server {
         EventExecutorAttach eventExecutorAttach = executorAttachMap.get(executor.hashCode());
         if (eventExecutorAttach == null) {
             int num = executorNum.getAndIncrement();
+            Thread thread = new Thread(() -> {
+                DelayQueue<AddNewRespData> dataQueue = getRespDataQueue(executor);
+                while (true) {
+                    AddNewRespData poll = dataQueue.poll();
+                    if (poll == null) {
+                        continue;
+                    }
+
+                    ThreadPoolUtils.getInstance().execute(() -> {
+                        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+                        response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+                        byte[] resp = String.format(SUCC_RESP, poll.getOrderId()).getBytes();
+                        ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
+                        byteBuf.writeBytes(resp);
+                        response.content().writeBytes(byteBuf);
+                        byteBuf.release();
+                        poll.getCtx().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    });
+                }
+            });
             eventExecutorAttach = new EventExecutorAttach()
                     .setNum((byte) num)
                     .setExecutor(executor)
@@ -87,7 +109,9 @@ public class Server {
                     .setRealWriteIndex(0)
                     .setRealFileNum(new AtomicInteger(0))
                     .setIdxWriteIndex(0)
-                    .setIdxFileNum(new AtomicInteger(0));
+                    .setIdxFileNum(new AtomicInteger(0))
+                    .setThread(thread);
+            thread.start();
             executorAttachMap.put(executor.hashCode(), eventExecutorAttach);
         }
         return eventExecutorAttach;
@@ -119,13 +143,6 @@ public class Server {
 
     private void setIdxWriteIndex(EventExecutorAttach attach, int writeIndex) {
         attach.setIdxWriteIndex(writeIndex);
-    }
-
-    private String getFileName(EventExecutor executor) {
-        EventExecutorAttach attach = getAttach(executor);
-        Byte num = attach.getNum();
-        AtomicInteger fileNum = attach.getFileNum();
-        return String.format(FILE_PREFIX, num, fileNum.get());
     }
 
     private String getFileName(EventExecutorAttach attach) {
@@ -184,13 +201,14 @@ public class Server {
         getIdxQueue(mobile).offer(idx);
     }
 
+    // 保存订单数据
     private Map<Integer, TimeoutBlockingQueue<String>> orderMap;
 
     private TimeoutBlockingQueue<String> getOrderQueue(EventExecutor executor) {
         TimeoutBlockingQueue<String> orders = orderMap.get(executor.hashCode());
         if (orders == null) {
             String[] items = new String[2000];
-            orders = new TimeoutBlockingQueue<>(items, 1, 1000);
+            orders = new TimeoutBlockingQueue<>(items, 100, 1000);
             orderMap.put(executor.hashCode(), orders);
         }
         return orders;
@@ -201,6 +219,7 @@ public class Server {
         orders.put(order);
     }
 
+    // 保存索引数据
     private Map<Integer, TimeoutBlockingQueue<Index>> saveIndexMap;
 
     private TimeoutBlockingQueue<Index> getSaveIndexQueue(EventExecutor executor) {
@@ -208,7 +227,7 @@ public class Server {
         if (indexes == null) {
 
             Index[] items = new Index[2000];
-            indexes = new TimeoutBlockingQueue<>(items, 1, 1000);
+            indexes = new TimeoutBlockingQueue<>(items, 100, 1000);
             saveIndexMap.put(executor.hashCode(), indexes);
         }
         return indexes;
@@ -219,16 +238,35 @@ public class Server {
         indexes.put(index);
     }
 
+    // 延迟队列
+    private Map<Integer, DelayQueue<AddNewRespData>> respMap;
+
+    private DelayQueue<AddNewRespData> getRespDataQueue(EventExecutor executor) {
+        DelayQueue<AddNewRespData> datas = respMap.get(executor.hashCode());
+        if (datas == null) {
+            datas = new DelayQueue<>();
+            respMap.put(executor.hashCode(), datas);
+        }
+        return datas;
+    }
+
+    private void putRespData(EventExecutor executor, AddNewRespData respData) {
+        DelayQueue<AddNewRespData> datas = getRespDataQueue(executor);
+        datas.offer(respData);
+    }
+
     public Server(String basePath, int bossN, int workerN) {
         this.basePath = basePath;
         this.bossN = bossN;
         this.workerN = workerN;
         boss = new NioEventLoopGroup(bossN);
         worker = new NioEventLoopGroup(workerN);
-        executorAttachMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
-        orderMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
-        saveIndexMap = new ConcurrentHashMap<>((int) (workerN / .75) + 1);
+        int capacity = (int) (workerN / .75) + 1;
+        executorAttachMap = new ConcurrentHashMap<>(capacity);
+        orderMap = new ConcurrentHashMap<>(capacity);
+        saveIndexMap = new ConcurrentHashMap<>(capacity);
         mobileIdxMap = new ConcurrentHashMap<>(65535);
+        respMap = new ConcurrentHashMap<>(capacity);
 
         readIdxFile();
     }
@@ -292,7 +330,6 @@ public class Server {
     }
 
     static class RequestHandler extends ChannelInboundHandlerAdapter {
-        private static final String SUCC_RESP = "{\"STATUS\":\"SUCCESS\",\"ORDER_ID\":%d}";
         private static final String ADD_NEW = "ADDNEW";
         private static final String FIND = "FINDBYMOBILE";
         private static final String ACTION = "ACTION";
@@ -334,7 +371,7 @@ public class Server {
         }
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
-            long start = System.currentTimeMillis();
+//            long start = System.currentTimeMillis();
 
             EventExecutor executor = ctx.executor();
             EventExecutorAttach attach = server.getAttach(executor);
@@ -370,9 +407,10 @@ public class Server {
             executor.execute(() -> {
                 batchWrite(executor, orderInfo);
                 batchWriteIndex(executor, index);
+                server.putRespData(executor, new AddNewRespData(ctx, orderId, 2000));
             });
 
-            new Fiber<>((SuspendableRunnable) () -> {
+            /*new Fiber<>((SuspendableRunnable) () -> {
                 FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
                 response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
                 if (HttpUtil.isKeepAlive(request)) {
@@ -398,7 +436,7 @@ public class Server {
                 }
                 log.info("take: {}", System.currentTimeMillis() - start);
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-            }).start();
+            }).start();*/
         }
 
         private void batchWriteIndex(EventExecutor executor, Index idxData) {
@@ -660,6 +698,7 @@ public class Server {
         AtomicInteger realFileNum;
         Integer idxWriteIndex;
         AtomicInteger idxFileNum;
+        Thread thread;
 
         public Byte getNum() {
             return num;
@@ -739,6 +778,15 @@ public class Server {
 
         public EventExecutorAttach setIdxFileNum(AtomicInteger idxFileNum) {
             this.idxFileNum = idxFileNum;
+            return this;
+        }
+
+        public Thread getThread() {
+            return thread;
+        }
+
+        public EventExecutorAttach setThread(Thread thread) {
+            this.thread = thread;
             return this;
         }
     }
