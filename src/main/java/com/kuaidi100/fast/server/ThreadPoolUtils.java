@@ -101,10 +101,10 @@ public class ThreadPoolUtils {
 //        log.debug("queueSize: {}", executor.getQueue().size());
         int queueSize = executor.getQueue().size();
         if (queueSize >= 10) {
-            int coreSize = executor.getCorePoolSize() << 1;
+            /*int coreSize = executor.getCorePoolSize() << 1;
             if (coreSize <= 16384) {
                 executor.setCorePoolSize(coreSize);
-            }
+            }*/
             log.warn("queueSize: {}, corePoolSize: {}", queueSize, executor.getCorePoolSize());
         }
     }
