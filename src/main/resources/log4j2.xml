@@ -51,8 +51,8 @@
     </Appenders>
 
     <Loggers>
-        <logger name="com.kuaidi100" level="debug"/>
-        <logger name="io.netty" level="debug"/>
+        <logger name="com.kuaidi100" level="info"/>
+        <logger name="io.netty" level="info"/>
         <!-- includeLocation设置成false不打印方法名及行号 -->
         <Root level="info" includeLocation="false">
             <AppenderRef ref="Console"/>

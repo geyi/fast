@@ -1,5 +1,7 @@
 package com.kuaidi100.fast.server;
 
+import co.paralleluniverse.fibers.Fiber;
+import co.paralleluniverse.strands.SuspendableRunnable;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.annotation.JSONField;
 import io.netty.bootstrap.ServerBootstrap;
@@ -188,7 +190,7 @@ public class Server {
         TimeoutBlockingQueue<String> orders = orderMap.get(executor.hashCode());
         if (orders == null) {
             String[] items = new String[2000];
-            orders = new TimeoutBlockingQueue<>(items, 100, 1000);
+            orders = new TimeoutBlockingQueue<>(items, 1, 1000);
             orderMap.put(executor.hashCode(), orders);
         }
         return orders;
@@ -206,7 +208,7 @@ public class Server {
         if (indexes == null) {
 
             Index[] items = new Index[2000];
-            indexes = new TimeoutBlockingQueue<>(items, 100, 1000);
+            indexes = new TimeoutBlockingQueue<>(items, 1, 1000);
             saveIndexMap.put(executor.hashCode(), indexes);
         }
         return indexes;
@@ -370,8 +372,7 @@ public class Server {
                 batchWriteIndex(executor, index);
             });
 
-            ThreadPoolUtils.getInstance().execute(() -> {
-
+            new Fiber<>((SuspendableRunnable) () -> {
                 FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
                 response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
                 if (HttpUtil.isKeepAlive(request)) {
@@ -386,7 +387,7 @@ public class Server {
                 long take = System.currentTimeMillis() - start;
                 ThreadPoolUtils.getInstance().updateTotalTime(take);
                 try {
-                    long sleep = 1990 - take;
+                    long sleep = 2000 - take;
                     log.info("sleep: {}", sleep);
                     if (sleep > 0) {
                         ThreadPoolUtils.getInstance().updateWaitingTime(sleep);
@@ -397,7 +398,7 @@ public class Server {
                 }
                 log.info("take: {}", System.currentTimeMillis() - start);
                 ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-            });
+            }).start();
         }
 
         private void batchWriteIndex(EventExecutor executor, Index idxData) {

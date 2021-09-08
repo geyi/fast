@@ -47,8 +47,8 @@ public class ThreadPoolUtils {
             corePoolSize = availableProcessors << 4;
             maxPoolSize = availableProcessors << 5;
         } else {
-            corePoolSize = 16384;
-            maxPoolSize = 20000;
+            corePoolSize = 1024;
+            maxPoolSize = 1024;
         }
         initThreadPool(corePoolSize, maxPoolSize, 200000);
     }
