@@ -65,6 +65,7 @@ public class Server {
     private static final int FILE_SIZE = 1 << 29;
     private static final String FILE_PREFIX = "ORDER_DATA_%s_%d";
     private static final String SUCC_RESP = "{\"STATUS\":\"SUCCESS\",\"ORDER_ID\":%d}";
+    private static final int BW_COUNT = 100;
 
     private NioEventLoopGroup boss;
     private NioEventLoopGroup worker;
@@ -211,8 +212,8 @@ public class Server {
     private TimeoutBlockingQueue<String> getOrderQueue(EventExecutor executor) {
         TimeoutBlockingQueue<String> orders = orderMap.get(executor.hashCode());
         if (orders == null) {
-            String[] items = new String[2000];
-            orders = new TimeoutBlockingQueue<>(items, 100, 1000);
+            String[] items = new String[200];
+            orders = new TimeoutBlockingQueue<>(items, BW_COUNT, 1000);
             orderMap.put(executor.hashCode(), orders);
         }
         return orders;
@@ -230,8 +231,8 @@ public class Server {
         TimeoutBlockingQueue<Index> indexes = saveIndexMap.get(executor.hashCode());
         if (indexes == null) {
 
-            Index[] items = new Index[2000];
-            indexes = new TimeoutBlockingQueue<>(items, 100, 1000);
+            Index[] items = new Index[200];
+            indexes = new TimeoutBlockingQueue<>(items, BW_COUNT, 1000);
             saveIndexMap.put(executor.hashCode(), indexes);
         }
         return indexes;
@@ -455,10 +456,9 @@ public class Server {
                     int writeIndex = attach.getIdxWriteIndex();
                     String fileName = server.getIdxFileName(attach);
 
-                    StringBuilder sb = new StringBuilder();
+                    StringBuilder sb = new StringBuilder(335 * BW_COUNT);
                     for (Index idx : indexList) {
                         String idxJson = JSONObject.toJSONString(idx);
-                        log.info("idx len: {}", idxJson.length());
                         // 如果拼上下一个订单信息会超出文件大小，则将前面的内容先写入文件
                         if (writeIndex + sb.length() + idxJson.length() > FILE_SIZE) {
                             if (sb.length() > 0) {
@@ -478,7 +478,9 @@ public class Server {
                     }
                     int nextWriteIndex = fileWrite(server.basePath + "idx" + File.separator + fileName, sb.toString(), writeIndex);
                     server.setIdxWriteIndex(attach, nextWriteIndex);
+                    // help gc
                     indexList = null;
+                    sb = null;
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -497,7 +499,8 @@ public class Server {
                     int writeIndex = attach.getRealWriteIndex();
                     String fileName = server.getRealFileName(attach);
 
-                    StringBuilder sb = new StringBuilder();
+                    // 测试初始容量避免内存复制
+                    StringBuilder sb = new StringBuilder(335 * BW_COUNT);
                     for (String order : orders) {
                         // 如果拼上下一个订单信息会超出文件大小，则将前面的内容先写入文件
                         if (writeIndex + sb.length() + order.length() > FILE_SIZE) {
@@ -518,7 +521,9 @@ public class Server {
                     }
                     int nextWriteIndex = fileWrite(server.basePath + fileName, sb.toString(), writeIndex);
                     server.setRealWriteIndex(attach, nextWriteIndex);
+                    // help gc
                     orders = null;
+                    sb = null;
                 }
             } catch (InterruptedException e) {
                 e.printStackTrace();
