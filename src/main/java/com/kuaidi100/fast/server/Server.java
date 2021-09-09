@@ -256,8 +256,7 @@ public class Server {
     }
 
     private void putRespData(EventExecutor executor, AddNewRespData respData) {
-        DelayQueue<AddNewRespData> datas = getRespDataQueue(executor);
-        datas.offer(respData);
+        getRespDataQueue(executor).offer(respData);
     }
 
     public Server(String basePath, int bossN, int workerN) {
@@ -308,7 +307,7 @@ public class Server {
         final Server server = this;
         ServerBootstrap serverBootstrap = new ServerBootstrap().group(boss, worker)
                 .channel(NioServerSocketChannel.class)
-                .option(ChannelOption.SO_BACKLOG, 4096)
+                .option(ChannelOption.SO_BACKLOG, 8192)
                 .childHandler(new ChannelInitializer<Channel>() {
                     @Override
                     protected void initChannel(Channel ch) throws Exception {
