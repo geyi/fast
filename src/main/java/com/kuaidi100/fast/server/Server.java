@@ -26,7 +26,6 @@ import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpServerCodec;
-import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
 import io.netty.util.CharsetUtil;
 import io.netty.util.concurrent.EventExecutor;
@@ -79,18 +78,19 @@ public class Server {
         if (eventExecutorAttach == null) {
             int num = executorNum.getAndIncrement();
             Thread thread = new Thread(() -> {
-                DelayQueue<AddNewRespData> dataQueue = getRespDataQueue(executor);
+                DelayQueue<RespData> dataQueue = getRespDataQueue(executor);
                 ThreadPoolUtils threadPoolUtils = ThreadPoolUtils.getInstance();
                 while (true) {
-                    AddNewRespData respData = dataQueue.poll();
+                    RespData respData = dataQueue.poll();
                     if (respData == null) {
+                        // do something
                         continue;
                     }
                     // 队列大于0则自己处理，避免入队出队的操作
                     if (threadPoolUtils.getQueueSize() > 0) {
-                        resp(respData);
+                        dispatcher(respData);
                     } else {
-                        threadPoolUtils.execute(() -> resp(respData));
+                        threadPoolUtils.execute(() -> dispatcher(respData));
                     }
                 }
             });
@@ -111,12 +111,31 @@ public class Server {
         return eventExecutorAttach;
     }
 
-    private void resp(AddNewRespData respData) {
+    private void dispatcher(RespData respData) {
+        if (respData instanceof AddNewRespData) {
+            respAddNew((AddNewRespData) respData);
+        } else {
+            respFind((FindRespData) respData);
+        }
+    }
+
+    private void respAddNew(AddNewRespData respData) {
         FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
         byte[] resp = String.format(SUCC_RESP, respData.getOrderId()).getBytes();
         ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
         byteBuf.writeBytes(resp);
+        response.content().writeBytes(byteBuf);
+        byteBuf.release();
+        respData.getCtx().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+    }
+
+    private void respFind(FindRespData respData) {
+        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+        byte[] bytes = respData.getData();
+        ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytes.length);
+        byteBuf.writeBytes(bytes);
         response.content().writeBytes(byteBuf);
         byteBuf.release();
         respData.getCtx().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
@@ -244,10 +263,10 @@ public class Server {
     }
 
     // 延迟队列
-    private Map<Integer, DelayQueue<AddNewRespData>> respMap;
+    private Map<Integer, DelayQueue<RespData>> respMap;
 
-    private DelayQueue<AddNewRespData> getRespDataQueue(EventExecutor executor) {
-        DelayQueue<AddNewRespData> datas = respMap.get(executor.hashCode());
+    private DelayQueue<RespData> getRespDataQueue(EventExecutor executor) {
+        DelayQueue<RespData> datas = respMap.get(executor.hashCode());
         if (datas == null) {
             datas = new DelayQueue<>();
             respMap.put(executor.hashCode(), datas);
@@ -255,7 +274,7 @@ public class Server {
         return datas;
     }
 
-    private void putRespData(EventExecutor executor, AddNewRespData respData) {
+    private void putRespData(EventExecutor executor, RespData respData) {
         getRespDataQueue(executor).offer(respData);
     }
 
@@ -387,7 +406,7 @@ public class Server {
 
             int writeIndex = attach.getWriteIndex();
             if (writeIndex + length > FILE_SIZE) {
-                log.error("超出文件最大写索引");
+                log.info("超出文件最大写索引");
                 server.setFileNum(executor, 1);
                 writeIndex = attach.getWriteIndex();
             }
@@ -398,7 +417,7 @@ public class Server {
             Index index = new Index(fileName, getInt(writeIndex), getInt(length), sMobile);
             server.saveMobileIdx(sMobile, index);
 
-            log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
+            /*log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
                     paramMap.get("USER_ID"),
                     paramMap.get("COM"),
                     paramMap.get("NUM"),
@@ -407,7 +426,7 @@ public class Server {
                     paramMap.get("SENDER_ADDR"),
                     paramMap.get("RECEIVER_NAME"),
                     paramMap.get("RECEIVER_MOBILE"),
-                    paramMap.get("RECEIVER_ADDR"));
+                    paramMap.get("RECEIVER_ADDR"));*/
 
             executor.execute(() -> {
                 batchWrite(executor, orderInfo);
@@ -532,11 +551,11 @@ public class Server {
         private void find(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             String sMobile = paramMap.get("SENDER_MOBILE");
             Queue<Index> idxQueue = server.getIdxQueue(sMobile);
-            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            /*FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
             response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
             if (HttpUtil.isKeepAlive(request)) {
                 response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-            }
+            }*/
             List<JSONObject> list;
             int size;
             if (idxQueue == null || (size = idxQueue.size()) == 0) {
@@ -549,17 +568,28 @@ public class Server {
                     if (i >= limit) {
                         break;
                     }
-                    byte[] bytes = fileRead(server.basePath + index.getFileName(), Integer.parseInt(index.getOffset()), Integer.parseInt(index.getLength()));
-                    list.add(JSONObject.parseObject(new String(bytes)));
+                    byte[] bytes = fileRead(server.basePath + index.getFileName(),
+                            Integer.parseInt(index.getOffset()), Integer.parseInt(index.getLength()));
+                    if (bytes == null || bytes.length <= 0) {
+                        continue;
+                    }
+                    try {
+                        list.add(JSONObject.parseObject(new String(bytes)));
+                    } catch (Exception e) {
+                        log.error("json err:{},{}", new String(bytes), index.toString());
+                    }
                     i++;
                 }
             }
-            byte[] bytes = JSONObject.toJSONString(list).getBytes();
+            server.getAttach(ctx.executor());
+            server.putRespData(ctx.executor(), new FindRespData(ctx, JSONObject.toJSONString(list).getBytes(), 2000));
+
+            /*byte[] bytes = JSONObject.toJSONString(list).getBytes();
             ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytes.length);
             byteBuf.writeBytes(bytes);
             response.content().writeBytes(byteBuf);
             list = null;
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);*/
         }
 
         private static void sendError(ChannelHandlerContext ctx, HttpResponseStatus status) {
@@ -846,6 +876,16 @@ public class Server {
 
         public void setValue(String value) {
             this.value = value;
+        }
+
+        @Override
+        public String toString() {
+            return "Index{" +
+                    "fileName='" + fileName + '\'' +
+                    ", offset='" + offset + '\'' +
+                    ", length='" + length + '\'' +
+                    ", value='" + value + '\'' +
+                    '}';
         }
     }
 

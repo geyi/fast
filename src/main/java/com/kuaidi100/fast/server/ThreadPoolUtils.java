@@ -58,7 +58,7 @@ public class ThreadPoolUtils {
             synchronized (executorLock) {
                 if (executor == null) {
                     log.info("corePoolSize: {}, maxPoolSize: {}, queueSize: {}", corePoolSize, maxPoolSize, queueSize);
-                    executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 2, TimeUnit.SECONDS,
+                    executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 60, TimeUnit.SECONDS,
                             new ArrayBlockingQueue<>(queueSize),
                             new ThreadFactoryBuilder().setNameFormat("fast-%d").build(),
                             new ThreadPoolExecutor.CallerRunsPolicy());
