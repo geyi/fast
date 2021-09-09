@@ -456,7 +456,7 @@ public class Server {
                     int writeIndex = attach.getIdxWriteIndex();
                     String fileName = server.getIdxFileName(attach);
 
-                    StringBuilder sb = new StringBuilder(335 * BW_COUNT);
+                    StringBuilder sb = new StringBuilder(95 * BW_COUNT);
                     for (Index idx : indexList) {
                         String idxJson = JSONObject.toJSONString(idx);
                         // 如果拼上下一个订单信息会超出文件大小，则将前面的内容先写入文件
