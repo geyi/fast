@@ -86,12 +86,7 @@ public class Server {
                         // do something
                         continue;
                     }
-                    // 队列大于0则自己处理，避免入队出队的操作
-                    if (threadPoolUtils.getQueueSize() > 0) {
-                        dispatcher(respData);
-                    } else {
-                        threadPoolUtils.execute(() -> dispatcher(respData));
-                    }
+                    threadPoolUtils.execute(() -> dispatcher(respData));
                 }
             });
             eventExecutorAttach = new EventExecutorAttach()
@@ -551,11 +546,6 @@ public class Server {
         private void find(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             String sMobile = paramMap.get("SENDER_MOBILE");
             Queue<Index> idxQueue = server.getIdxQueue(sMobile);
-            /*FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-            response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
-            if (HttpUtil.isKeepAlive(request)) {
-                response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-            }*/
             List<JSONObject> list;
             int size;
             if (idxQueue == null || (size = idxQueue.size()) == 0) {
@@ -573,23 +563,12 @@ public class Server {
                     if (bytes == null || bytes.length <= 0) {
                         continue;
                     }
-                    try {
-                        list.add(JSONObject.parseObject(new String(bytes)));
-                    } catch (Exception e) {
-                        log.error("json err:{},{}", new String(bytes), index.toString());
-                    }
+                    list.add(JSONObject.parseObject(new String(bytes)));
                     i++;
                 }
             }
             server.getAttach(ctx.executor());
             server.putRespData(ctx.executor(), new FindRespData(ctx, JSONObject.toJSONString(list).getBytes(), 2000));
-
-            /*byte[] bytes = JSONObject.toJSONString(list).getBytes();
-            ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(bytes.length);
-            byteBuf.writeBytes(bytes);
-            response.content().writeBytes(byteBuf);
-            list = null;
-            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);*/
         }
 
         private static void sendError(ChannelHandlerContext ctx, HttpResponseStatus status) {

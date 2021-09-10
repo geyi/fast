@@ -16,8 +16,7 @@ public class ThreadPoolUtils {
     private static final Logger log = LoggerFactory.getLogger(ThreadPoolUtils.class);
 
     private static volatile ThreadPoolUtils threadPoolUtils = null;
-    private volatile ThreadPoolExecutor executor = null;
-    private final Object executorLock = new Object();
+    private volatile ThreadPoolExecutor executor;
     private static final AtomicLongFieldUpdater<ThreadPoolUtils> WAITING_TIME_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ThreadPoolUtils.class, "waitingTime");
     private volatile long waitingTime = 0;
@@ -26,6 +25,22 @@ public class ThreadPoolUtils {
     private volatile long totalTime = 0;
 
     private ThreadPoolUtils() {
+        int availableProcessors = Runtime.getRuntime().availableProcessors();
+        int corePoolSize;
+        int maxPoolSize;
+        if (availableProcessors <= 2) {
+            corePoolSize = availableProcessors << 4;
+            maxPoolSize = availableProcessors << 5;
+        } else {
+            corePoolSize = 256;
+            maxPoolSize = 256;
+        }
+        int queueSize = 200;
+        log.info("corePoolSize: {}, maxPoolSize: {}, queueSize: {}", corePoolSize, maxPoolSize, queueSize);
+        executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 60, TimeUnit.SECONDS,
+                new ArrayBlockingQueue<>(queueSize),
+                new ThreadFactoryBuilder().setNameFormat("fast-%d").build(),
+                new ThreadPoolExecutor.CallerRunsPolicy());
     }
 
     public static ThreadPoolUtils getInstance() {
@@ -39,62 +54,20 @@ public class ThreadPoolUtils {
         return threadPoolUtils;
     }
 
-    private void initParam() {
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
-        int corePoolSize;
-        int maxPoolSize;
-        if (availableProcessors <= 2) {
-            corePoolSize = availableProcessors << 4;
-            maxPoolSize = availableProcessors << 5;
-        } else {
-            corePoolSize = 256;
-            maxPoolSize = 256;
-        }
-        initThreadPool(corePoolSize, maxPoolSize, 2000);
-    }
-
-    public void initThreadPool(int corePoolSize, int maxPoolSize, int queueSize) {
-        if (executor == null) {
-            synchronized (executorLock) {
-                if (executor == null) {
-                    log.info("corePoolSize: {}, maxPoolSize: {}, queueSize: {}", corePoolSize, maxPoolSize, queueSize);
-                    executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 60, TimeUnit.SECONDS,
-                            new ArrayBlockingQueue<>(queueSize),
-                            new ThreadFactoryBuilder().setNameFormat("fast-%d").build(),
-                            new ThreadPoolExecutor.CallerRunsPolicy());
-                }
-            }
-        }
-    }
-
     public void execute(Runnable runnable) {
-        if (executor == null) {
-            initParam();
-        }
         executor.execute(runnable);
-        this.print();
     }
 
     public <T> Future<T> execute(Runnable runnable, T result) {
-        if (executor == null) {
-            initParam();
-        }
         Future<T> future = executor.submit(runnable, result);
-        this.print();
         return future;
     }
 
     public Executor getExecutor() {
-        if (executor == null) {
-            initParam();
-        }
         return this.executor;
     }
 
     public void print() {
-        if (executor == null) {
-            initParam();
-        }
 //        log.debug("activeCount: {}", executor.getActiveCount());
 //        log.debug("completedTaskCount: {}", executor.getCompletedTaskCount());
 //        log.debug("taskCount: {}", executor.getTaskCount());
@@ -110,9 +83,6 @@ public class ThreadPoolUtils {
     }
 
     public int getQueueSize() {
-        if (executor == null) {
-            initParam();
-        }
         return executor.getQueue().size();
     }
 
