@@ -417,7 +417,7 @@ public class Server {
             Index index = new Index(fileName, getInt(writeIndex), getInt(length), sMobile);
             server.saveMobileIdx(sMobile, index);
 
-            /*log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
+            log.info("{}|{}|{}|{}|{}|{}|{}|{}|{}|{}", paramMap.get("ORDER_ID"),
                     paramMap.get("USER_ID"),
                     paramMap.get("COM"),
                     paramMap.get("NUM"),
@@ -426,7 +426,7 @@ public class Server {
                     paramMap.get("SENDER_ADDR"),
                     paramMap.get("RECEIVER_NAME"),
                     paramMap.get("RECEIVER_MOBILE"),
-                    paramMap.get("RECEIVER_ADDR"));*/
+                    paramMap.get("RECEIVER_ADDR"));
 
             executor.execute(() -> {
                 batchWrite(executor, orderInfo);
@@ -559,17 +559,20 @@ public class Server {
                 int limit = size > 10 ? 10 : size;
                 int i = 0;
                 list = new ArrayList<>(limit);
-                for (Index index : idxQueue) {
-                    if (i >= limit) {
-                        break;
+                try {
+                    for (Index index : idxQueue) {
+                        if (i >= limit) {
+                            break;
+                        }
+                        byte[] bytes = fileRead(server.basePath + index.getFileName(),
+                                Integer.parseInt(index.getOffset()), Integer.parseInt(index.getLength()));
+                        if (bytes == null || bytes.length <= 0) {
+                            continue;
+                        }
+                        list.add(JSONObject.parseObject(new String(bytes)));
+                        i++;
                     }
-                    byte[] bytes = fileRead(server.basePath + index.getFileName(),
-                            Integer.parseInt(index.getOffset()), Integer.parseInt(index.getLength()));
-                    if (bytes == null || bytes.length <= 0) {
-                        continue;
-                    }
-                    list.add(JSONObject.parseObject(new String(bytes)));
-                    i++;
+                } catch (Exception e) {
                 }
             }
             server.getAttach(ctx.executor());
