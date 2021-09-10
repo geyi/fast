@@ -283,10 +283,15 @@ public class Server {
         executorAttachMap = new ConcurrentHashMap<>(capacity);
         orderMap = new ConcurrentHashMap<>(capacity);
         saveIndexMap = new ConcurrentHashMap<>(capacity);
-        mobileIdxMap = new ConcurrentHashMap<>(65535);
+        mobileIdxMap = new ConcurrentHashMap<>(655350);
         respMap = new ConcurrentHashMap<>(capacity);
 
         readIdxFile();
+
+        ThreadPoolUtils instance = ThreadPoolUtils.getInstance();
+        for (int i = 0; i < ThreadPoolUtils.CORE_POOL_SIZE; i++) {
+            instance.execute(() -> log.info("activation " + Thread.currentThread().getName()));
+        }
     }
 
     private void readIdxFile() {
