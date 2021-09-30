@@ -51,7 +51,7 @@ public class NumIndex {
     private void init() {
         int capacity = 209713664;
         int pos = 2;
-        int size = 2048;
+        int size = 40960;
         int rangeSize = 10000000;
         int limit = capacity / rangeSize + 1;
         CountDownLatch countDownLatch = new CountDownLatch(limit);
@@ -88,7 +88,7 @@ public class NumIndex {
             }
             int nextPos = Math.min(rangeSize, pos + size);
             int nextSize;
-            if ((nextSize = nextPos - pos) < size) {
+            if ((nextSize = rangeSize - nextPos) < size) {
                 size = nextSize;
             }
             pos = nextPos;
@@ -109,9 +109,33 @@ public class NumIndex {
             byte[] bytes = new byte[size];
             map.get(bytes);
             return bytes;
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
-            System.out.println(position + "/" + size);
+            System.out.println("error " + position + "/" + size);
+        } finally {
+            try {
+                if (randomAccessTargetFile != null) {
+                    randomAccessTargetFile.close();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return null;
+    }
+
+    private byte[] read2(int position, int size) {
+        File file = new File("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        RandomAccessFile randomAccessTargetFile = null;
+        try {
+            randomAccessTargetFile = new RandomAccessFile(file, "r");
+            randomAccessTargetFile.seek(position);
+            byte[] bytes = new byte[size];
+            randomAccessTargetFile.read(bytes, 0, size);
+            return bytes;
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("error " + position + "/" + size);
         } finally {
             try {
                 if (randomAccessTargetFile != null) {
@@ -139,7 +163,7 @@ public class NumIndex {
 //        numIndex.print(Byte.valueOf("1"));
         long start2 = System.currentTimeMillis();
         String s =
-                "1218892893885473384450038731257776431911345139971582169155728058096121830758792106178891599204812129";
+                "7626296943170328152372416063616219376575405163726180481501340425225452284449550662725516608984270090";
         System.out.println(numIndex.getOffset(s));
         System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");
 
