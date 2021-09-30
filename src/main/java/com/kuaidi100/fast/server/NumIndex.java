@@ -13,9 +13,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class NumIndex {
     private static final int LONG_ADDRESSABLE_BITS = 6;
+    private static final int CAPACITY = 209713664;
+
+    private String filePath;
     private Map<Byte, long[]> positionMap = new HashMap<>((int) (10 / .75) + 1);
 
-    public NumIndex() {
+    public NumIndex(String filePath) {
+        this.filePath = filePath;
         for (int i = 0; i < 10; i++) {
             positionMap.put(Byte.valueOf(String.valueOf(i)), new long[3276800]);
         }
@@ -25,14 +29,11 @@ public class NumIndex {
     private void set(Byte num, int bitIndex) {
         long[] bitmap = positionMap.get(num);
         int longIndex = bitIndex >>> LONG_ADDRESSABLE_BITS;
-        long oldValue = bitmap[longIndex];
-        long newValue = oldValue | (1L << bitIndex);
-        bitmap[longIndex] = newValue;
+        bitmap[longIndex] = bitmap[longIndex] | (1L << bitIndex);
     }
 
     private boolean get(Byte num, int bitIndex) {
-        long[] bitmap = positionMap.get(num);
-        return (bitmap[(bitIndex >>> LONG_ADDRESSABLE_BITS)] & (1L << bitIndex)) != 0;
+        return (positionMap.get(num)[bitIndex >>> LONG_ADDRESSABLE_BITS] & (1L << bitIndex)) != 0;
     }
 
     private void print(Byte num) {
@@ -51,17 +52,15 @@ public class NumIndex {
     }
 
     private void init() {
-        int capacity = 209713664;
         int pos = 2;
         int size = 40960;
         int rangeSize = 20000000;
-        int limit = capacity / rangeSize + 1;
+        int limit = CAPACITY / rangeSize + 1;
         CountDownLatch countDownLatch = new CountDownLatch(limit);
         for (int i = 0; i < limit; i++) {
-            int rangeLimit = Math.min(rangeSize * (i + 1), capacity);
+            int rangeLimit = Math.min(rangeSize * (i + 1), CAPACITY);
             int finalPos = pos;
             ThreadPoolUtils.getInstance().execute(() -> task(finalPos, size, rangeLimit, countDownLatch));
-            System.out.println(pos + "/" + size + "/" + rangeLimit);
             pos = rangeLimit;
         }
         try {
@@ -84,8 +83,6 @@ public class NumIndex {
             for (int i = 0, len = nums.length; i < len; i++) {
                 char num = (char) nums[i];
                 int bitIndex = pos - 2 + i;
-                /*System.out.println(num);
-                System.out.println(bitIndex);*/
                 set(Byte.valueOf(String.valueOf(num)), bitIndex);
             }
             int nextPos = Math.min(rangeSize, pos + size);
@@ -96,12 +93,11 @@ public class NumIndex {
             pos = nextPos;
 
         }
-        System.out.println(pos + "/" + size);
         countDownLatch.countDown();
     }
 
     private byte[] read(int position, int size) {
-        File file = new File("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        File file = new File(filePath);
         RandomAccessFile randomAccessTargetFile = null;
         MappedByteBuffer map;
         try {
@@ -127,7 +123,7 @@ public class NumIndex {
     }
 
     private byte[] read2(int position, int size) {
-        File file = new File("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        File file = new File(filePath);
         RandomAccessFile randomAccessTargetFile = null;
         try {
             randomAccessTargetFile = new RandomAccessFile(file, "r");
@@ -152,17 +148,9 @@ public class NumIndex {
 
     public static void main(String[] args) {
         long start = System.currentTimeMillis();
-        NumIndex numIndex = new NumIndex();
+        NumIndex numIndex = new NumIndex("C:\\Users\\GEYI\\Desktop\\TMP\\pi-200m.txt");
         System.out.println("初始化时间：" + (System.currentTimeMillis() - start) + "ms");
-        /*numIndex.printBinary(65535L);*/
 
-        /*for (int i = 0; i < 99; i++) {
-            numIndex.set(Byte.valueOf("1"), i);
-        }
-        numIndex.print(Byte.valueOf("1"));*/
-
-//        numIndex.task(2, 2048, 0);
-//        numIndex.print(Byte.valueOf("1"));
         long start2 = System.currentTimeMillis();
         String s =
                 "0694055217886917382314463050191608201773165461843981290739460517266863978766407209146507654911588610";
@@ -174,7 +162,7 @@ public class NumIndex {
     public int getOffset(String s) {
         int index = 0;
         Byte num = Byte.valueOf(s.substring(index, 1));
-        for (int i = 0; i < 209713664; i++) {
+        for (int i = 0; i < CAPACITY; i++) {
             if (!get(num, i)) {
                 continue;
             }
@@ -189,23 +177,23 @@ public class NumIndex {
     public int getOffset(String s, int range) {
         AtomicInteger result = new AtomicInteger(-1);
         AtomicBoolean success = new AtomicBoolean(false);
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+
         int index = 0;
         Byte num = Byte.valueOf(s.substring(index, 1));
-        int limit = (209713664 / range) + 1;
-        CountDownLatch countDownLatch = new CountDownLatch(1);
+        int limit = (CAPACITY / range) + 1;
         for (int j = 0; j < limit; j++) {
             int finalJ = j;
             ThreadPoolUtils.getInstance().execute(() -> {
                 int m = finalJ * range;
-                int n = Math.min(209713664, m + range);
+                int n = Math.min(CAPACITY, m + range);
                 for (int i = m; i < n && !success.get(); i++) {
                     if (!get(num, i)) {
                         continue;
                     }
-                    int offset = i;
-                    if (check(s, index, offset)) {
+                    if (check(s, index, i)) {
+                        result.set(i);
                         success.set(true);
-                        result.set(offset);
                         countDownLatch.countDown();
                     }
                 }
@@ -220,7 +208,7 @@ public class NumIndex {
     }
 
     private boolean check(String s, int index, int offset) {
-        if (index > s.length() - 90) {
+        if (index > s.length() - 2) {
             return true;
         }
         Byte num = Byte.valueOf(s.substring(index + 1, index + 2));
