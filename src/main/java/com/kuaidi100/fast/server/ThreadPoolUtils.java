@@ -23,7 +23,7 @@ public class ThreadPoolUtils {
     private static final AtomicLongFieldUpdater<ThreadPoolUtils> TOTAL_TIME_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ThreadPoolUtils.class, "totalTime");
     private volatile long totalTime = 0;
-    public static final int CORE_POOL_SIZE = 256;
+    public static final int CORE_POOL_SIZE = 8;
 
     private ThreadPoolUtils() {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
@@ -57,6 +57,7 @@ public class ThreadPoolUtils {
 
     public void execute(Runnable runnable) {
         executor.execute(runnable);
+//        print();
     }
 
     public <T> Future<T> execute(Runnable runnable, T result) {
@@ -73,6 +74,10 @@ public class ThreadPoolUtils {
 //        log.debug("completedTaskCount: {}", executor.getCompletedTaskCount());
 //        log.debug("taskCount: {}", executor.getTaskCount());
 //        log.debug("queueSize: {}", executor.getQueue().size());
+        System.out.println("activeCount: {}" + executor.getActiveCount());
+        System.out.println("completedTaskCount: {}" + executor.getCompletedTaskCount());
+        System.out.println("taskCount: {}" + executor.getTaskCount());
+        System.out.println("queueSize: {}" + executor.getQueue().size());
         int queueSize = executor.getQueue().size();
         if (queueSize >= 10) {
             /*int coreSize = executor.getCorePoolSize() << 1;

@@ -8,6 +8,8 @@ import java.nio.channels.FileChannel;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class NumIndex {
     private static final int LONG_ADDRESSABLE_BITS = 6;
@@ -52,7 +54,7 @@ public class NumIndex {
         int capacity = 209713664;
         int pos = 2;
         int size = 40960;
-        int rangeSize = 10000000;
+        int rangeSize = 20000000;
         int limit = capacity / rangeSize + 1;
         CountDownLatch countDownLatch = new CountDownLatch(limit);
         for (int i = 0; i < limit; i++) {
@@ -163,8 +165,8 @@ public class NumIndex {
 //        numIndex.print(Byte.valueOf("1"));
         long start2 = System.currentTimeMillis();
         String s =
-                "7626296943170328152372416063616219376575405163726180481501340425225452284449550662725516608984270090";
-        System.out.println(numIndex.getOffset(s));
+                "0694055217886917382314463050191608201773165461843981290739460517266863978766407209146507654911588610";
+        System.out.println(numIndex.getOffset(s, 1000000));
         System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");
 
     }
@@ -184,8 +186,41 @@ public class NumIndex {
         return -1;
     }
 
+    public int getOffset(String s, int range) {
+        AtomicInteger result = new AtomicInteger(-1);
+        AtomicBoolean success = new AtomicBoolean(false);
+        int index = 0;
+        Byte num = Byte.valueOf(s.substring(index, 1));
+        int limit = (209713664 / range) + 1;
+        CountDownLatch countDownLatch = new CountDownLatch(1);
+        for (int j = 0; j < limit; j++) {
+            int finalJ = j;
+            ThreadPoolUtils.getInstance().execute(() -> {
+                int m = finalJ * range;
+                int n = Math.min(209713664, m + range);
+                for (int i = m; i < n && !success.get(); i++) {
+                    if (!get(num, i)) {
+                        continue;
+                    }
+                    int offset = i;
+                    if (check(s, index, offset)) {
+                        success.set(true);
+                        result.set(offset);
+                        countDownLatch.countDown();
+                    }
+                }
+            });
+        }
+        try {
+            countDownLatch.await();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        return result.get();
+    }
+
     private boolean check(String s, int index, int offset) {
-        if (index > s.length() - 80) {
+        if (index > s.length() - 90) {
             return true;
         }
         Byte num = Byte.valueOf(s.substring(index + 1, index + 2));
