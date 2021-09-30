@@ -81,12 +81,18 @@ public class Server {
                 DelayQueue<RespData> dataQueue = getRespDataQueue(executor);
                 ThreadPoolUtils threadPoolUtils = ThreadPoolUtils.getInstance();
                 while (true) {
-                    RespData respData = dataQueue.poll();
+                    RespData respData = null;
+                    try {
+                        respData = dataQueue.take();
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                     if (respData == null) {
                         // do something
                         continue;
                     }
-                    threadPoolUtils.execute(() -> dispatcher(respData));
+                    RespData finalRespData = respData;
+                    threadPoolUtils.execute(() -> dispatcher(finalRespData));
                 }
             });
             eventExecutorAttach = new EventExecutorAttach()
