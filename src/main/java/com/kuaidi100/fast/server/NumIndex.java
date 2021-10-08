@@ -1,6 +1,8 @@
 package com.kuaidi100.fast.server;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
@@ -13,7 +15,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class NumIndex {
     private static final int LONG_ADDRESSABLE_BITS = 6;
+    private static final int BITS_PER_WORD = 1 << LONG_ADDRESSABLE_BITS;
+    private static final long WORD_MASK = 0xffffffffffffffffL;
     private static final int CAPACITY = 209713664;
+    private static final int LONG_CAPACITY = (CAPACITY >> LONG_ADDRESSABLE_BITS) + 1;
 
     private String filePath;
     private Map<Byte, long[]> positionMap = new HashMap<>((int) (10 / .75) + 1);
@@ -21,7 +26,7 @@ public class NumIndex {
     public NumIndex(String filePath) {
         this.filePath = filePath;
         for (int i = 0; i < 10; i++) {
-            positionMap.put(Byte.valueOf(String.valueOf(i)), new long[3276800]);
+            positionMap.put(Byte.valueOf(String.valueOf(i)), new long[LONG_CAPACITY]);
         }
         init();
     }
@@ -34,6 +39,23 @@ public class NumIndex {
 
     private boolean get(Byte num, int bitIndex) {
         return (positionMap.get(num)[bitIndex >>> LONG_ADDRESSABLE_BITS] & (1L << bitIndex)) != 0;
+    }
+
+    private int nextBitIndex(Byte num, int bitIndex) {
+        long[] words = positionMap.get(num);
+        int u = bitIndex >>> LONG_ADDRESSABLE_BITS;
+        if (u >= LONG_CAPACITY)
+            return -1;
+
+        long word = words[u] & (WORD_MASK << bitIndex);
+
+        while (true) {
+            if (word != 0)
+                return (u * BITS_PER_WORD) + Long.numberOfTrailingZeros(word);
+            if (++u == LONG_CAPACITY)
+                return -1;
+            word = words[u];
+        }
     }
 
     private void print(Byte num) {
@@ -91,7 +113,6 @@ public class NumIndex {
                 size = nextSize;
             }
             pos = nextPos;
-
         }
         countDownLatch.countDown();
     }
@@ -146,26 +167,60 @@ public class NumIndex {
         return null;
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
+        System.out.println(LONG_CAPACITY);
         long start = System.currentTimeMillis();
-        NumIndex numIndex = new NumIndex("C:\\Users\\GEYI\\Desktop\\TMP\\pi-200m.txt");
+        NumIndex numIndex = new NumIndex("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
         System.out.println("初始化时间：" + (System.currentTimeMillis() - start) + "ms");
 
-        long start2 = System.currentTimeMillis();
+        /*for (int i = 0; i < 99; i++) {
+            numIndex.set(Byte.valueOf("1"), i);
+        }*/
+        /*numIndex.print(Byte.valueOf("1"));
+        int bitIndex = 0;
+        int i = 100;
+        while (i-- > 0) {
+            System.out.println(bitIndex = numIndex.nextBitIndex(Byte.valueOf("1"), bitIndex));
+            bitIndex++;
+        }*/
+
+
+        String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_orderid_500.txt";
+        BufferedReader reader = new BufferedReader(new FileReader(path));
+        reader.readLine();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            String[] arr = line.split(",");
+            long time = System.currentTimeMillis();
+            int idx = numIndex.getOffset(arr[3], 1000000);
+//            int idx = numIndex.getOffset(arr[3]);
+            time = System.currentTimeMillis() - time;
+            StringBuilder builder = new StringBuilder();
+            builder.append("index:")
+                    .append(idx)
+                    .append(" test index:")
+                    .append(arr[0])
+                    .append(" time:")
+                    .append(time)
+                    .append(" query:")
+                    .append(arr[3]);
+            System.out.println(builder.toString());
+        }
+
+        /*long start2 = System.currentTimeMillis();
         String s =
-                "0694055217886917382314463050191608201773165461843981290739460517266863978766407209146507654911588610";
+                "9918471532846957100840566775202932083434981268310082433961415075316781476534034038423001293534726182";
         System.out.println(numIndex.getOffset(s, 1000000));
-        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");
+        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");*/
+
+        /*System.out.println(numIndex.get(Byte.valueOf("1"), 5975514));*/
 
     }
 
     public int getOffset(String s) {
         int index = 0;
         Byte num = Byte.valueOf(s.substring(index, 1));
-        for (int i = 0; i < CAPACITY; i++) {
-            if (!get(num, i)) {
-                continue;
-            }
+        for (int i = 0; i < CAPACITY; i = nextBitIndex(num, ++i)) {
             int offset = i;
             if (check(s, index, offset)) {
                 return offset;
@@ -187,7 +242,18 @@ public class NumIndex {
             ThreadPoolUtils.getInstance().execute(() -> {
                 int m = finalJ * range;
                 int n = Math.min(CAPACITY, m + range);
-                for (int i = m; i < n && !success.get(); i++) {
+
+                for (int i = m; i < n && !success.get(); i = nextBitIndex(num, i)) {
+                    if (check(s, index, i)) {
+                        result.set(i);
+                        success.set(true);
+                        countDownLatch.countDown();
+                    } else {
+                        i++;
+                    }
+                }
+
+                /*for (int i = m; i < n && !success.get(); i++) {
                     if (!get(num, i)) {
                         continue;
                     }
@@ -196,7 +262,7 @@ public class NumIndex {
                         success.set(true);
                         countDownLatch.countDown();
                     }
-                }
+                }*/
             });
         }
         try {
@@ -214,6 +280,9 @@ public class NumIndex {
         Byte num = Byte.valueOf(s.substring(index + 1, index + 2));
         int tmpOffset;
         if (!get(num, (tmpOffset = offset + 1))) {
+            if (index == 0) {
+                return false;
+            }
             if (!get(num, (tmpOffset = offset + 2))) {
                 return false;
             }

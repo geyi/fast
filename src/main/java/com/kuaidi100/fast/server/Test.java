@@ -29,7 +29,7 @@ public class Test {
         Fiber<Object> objectFiber = new Fiber<>();*/
 
 
-        String s = "{\n" +
+        /*String s = "{\n" +
                 "\t\"data\":{\n" +
                 "\t\t\"name\":\"username\",\n" +
                 "\t\t\"value\":\"root\"\n" +
@@ -38,7 +38,12 @@ public class Test {
                 "\t\"ret\":0\n" +
                 "}";
         Result<List<Item>> listResult = parseListResult(s, Item.class);
-        System.out.println(listResult);
+        System.out.println(listResult);*/
+
+        long WORD_MASK = 0xffffffffffffffffL;
+        System.out.println(WORD_MASK << 65);
+        System.out.println(Long.toBinaryString(WORD_MASK << 65));
+        System.out.println(Long.numberOfTrailingZeros(WORD_MASK << 65));
     }
 
     private static <T> Result<List<T>> parseListResult(String json, Class<T> clazz) {

@@ -2,6 +2,7 @@ package com.kuaidi100.fast.server;
 
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.annotation.JSONField;
+import com.kuaidi100.fast.pi.BitSetPiWarehouse;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
@@ -32,6 +33,7 @@ import io.netty.util.concurrent.EventExecutor;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.File;
 import java.io.IOException;
@@ -48,6 +50,7 @@ import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.DelayQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -64,11 +67,16 @@ public class Server {
     private static final int FILE_SIZE = 1 << 29;
     private static final String FILE_PREFIX = "ORDER_DATA_%s_%d";
     private static final String SUCC_RESP = "{\"STATUS\":\"SUCCESS\",\"ORDER_ID\":%d}";
+    private static final String SORT_RESP = "{\"id\":%d,\"order_id\":%d}";
     private static final int BW_COUNT = 100;
 
     private NioEventLoopGroup boss;
     private NioEventLoopGroup worker;
     private Channel channel;
+
+    private NumIndex numIndex;
+    @Autowired
+    private BitSetPiWarehouse bitSetPiWarehouse;
 
     private AtomicInteger executorNum = new AtomicInteger(0);
     private Map<Integer, EventExecutorAttach> executorAttachMap;
@@ -81,6 +89,7 @@ public class Server {
                 DelayQueue<RespData> dataQueue = getRespDataQueue(executor);
                 ThreadPoolUtils threadPoolUtils = ThreadPoolUtils.getInstance();
                 while (true) {
+                    System.out.println(Thread.currentThread().getName() + " started");
                     RespData respData = null;
                     try {
                         respData = dataQueue.take();
@@ -89,6 +98,7 @@ public class Server {
                     }
                     if (respData == null) {
                         // do something
+                        System.out.println("null");
                         continue;
                     }
                     RespData finalRespData = respData;
@@ -113,11 +123,25 @@ public class Server {
     }
 
     private void dispatcher(RespData respData) {
-        if (respData instanceof AddNewRespData) {
+        if (respData instanceof SortRespData) {
+            respSort((SortRespData) respData);
+        } else if (respData instanceof AddNewRespData) {
             respAddNew((AddNewRespData) respData);
         } else {
             respFind((FindRespData) respData);
         }
+    }
+
+    List<SortRespData> list = new ArrayList<>(500);
+    private void respSort(SortRespData respData) {
+        FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
+        byte[] resp = String.format(SORT_RESP, respData.getId(), list.indexOf(respData) + 1).getBytes();
+        ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
+        byteBuf.writeBytes(resp);
+        response.content().writeBytes(byteBuf);
+        byteBuf.release();
+        respData.getCtx().writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 
     private void respAddNew(AddNewRespData respData) {
@@ -289,15 +313,18 @@ public class Server {
         executorAttachMap = new ConcurrentHashMap<>(capacity);
         orderMap = new ConcurrentHashMap<>(capacity);
         saveIndexMap = new ConcurrentHashMap<>(capacity);
-        mobileIdxMap = new ConcurrentHashMap<>(655350);
+//        mobileIdxMap = new ConcurrentHashMap<>(655350);
         respMap = new ConcurrentHashMap<>(capacity);
 
-        readIdxFile();
+        /*readIdxFile();
 
         ThreadPoolUtils instance = ThreadPoolUtils.getInstance();
         for (int i = 0; i < ThreadPoolUtils.CORE_POOL_SIZE; i++) {
             instance.execute(() -> log.info("activation " + Thread.currentThread().getName()));
-        }
+        }*/
+
+//        this.numIndex = new NumIndex("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        this.numIndex = new NumIndex(basePath + File.separator + "pi-200m.txt");
     }
 
     private void readIdxFile() {
@@ -361,6 +388,7 @@ public class Server {
     static class RequestHandler extends ChannelInboundHandlerAdapter {
         private static final String ADD_NEW = "ADDNEW";
         private static final String FIND = "FINDBYMOBILE";
+        private static final String TASK = "TASK";
         private static final String ACTION = "ACTION";
         private static final String ORDER_ID = "ORDER_ID";
 
@@ -382,7 +410,9 @@ public class Server {
             String uri = request.uri();
             Map<String, String> paramMap = this.parseQueryString(uri);
             String action = paramMap.get(ACTION);
-            if (ADD_NEW.equals(action)) {
+            if (TASK.equals(action)) {
+                this.task(request, ctx, paramMap);
+            } else if (ADD_NEW.equals(action)) {
                 this.addNew(request, ctx, paramMap);
             } else if (FIND.equals(action)) {
                 this.find(request, ctx, paramMap);
@@ -397,6 +427,22 @@ public class Server {
             if (ctx.channel().isActive()) {
                 this.sendError(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR);
             }
+        }
+
+        private void task(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
+            String num = paramMap.get("m");
+            int offset = server.numIndex.getOffset(num, 1000000);
+//            int offset = server.bitSetPiWarehouse.indexOf(num);
+            SortRespData sortRespData = new SortRespData(ctx, Integer.valueOf(String.valueOf(paramMap.get("id"))), 30000);
+            sortRespData.setIndexId(offset);
+            server.list.add(sortRespData);
+            server.list.sort((o1, o2) -> {
+                int x = o1.getIndexId();
+                int y = o2.getIndexId();
+                return (x < y) ? -1 : ((x == y) ? 0 : 1);
+            });
+            server.putRespData(ctx.executor(), sortRespData);
+            server.getAttach(ctx.executor());
         }
 
         private void addNew(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
@@ -601,6 +647,9 @@ public class Server {
             for (String param : params) {
                 String[] kv = StringUtils.split(param, '=');
                 ret.put(kv[0], kv[1]);
+            }
+            if (TASK.equalsIgnoreCase(uri.substring(i - 4, i))) {
+                ret.put(ACTION, TASK);
             }
             return ret;
         }
