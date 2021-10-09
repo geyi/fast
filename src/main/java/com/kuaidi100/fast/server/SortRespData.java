@@ -8,6 +8,7 @@ public class SortRespData extends RespData {
     private int id;
     private int indexId;
     private int orderId;
+    private String num;
 
     public SortRespData() {
     }
@@ -40,6 +41,14 @@ public class SortRespData extends RespData {
 
     public void setOrderId(int orderId) {
         this.orderId = orderId;
+    }
+
+    public String getNum() {
+        return num;
+    }
+
+    public void setNum(String num) {
+        this.num = num;
     }
 
     @Override

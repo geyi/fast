@@ -23,7 +23,7 @@ public class ThreadPoolUtils {
     private static final AtomicLongFieldUpdater<ThreadPoolUtils> TOTAL_TIME_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ThreadPoolUtils.class, "totalTime");
     private volatile long totalTime = 0;
-    public static final int CORE_POOL_SIZE = 16;
+    public static final int CORE_POOL_SIZE = 512;
 
     private ThreadPoolUtils() {
         int availableProcessors = Runtime.getRuntime().availableProcessors();

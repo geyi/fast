@@ -75,7 +75,6 @@ public class Server {
     private Channel channel;
 
     private NumIndex numIndex;
-    @Autowired
     private BitSetPiWarehouse bitSetPiWarehouse;
 
     private AtomicInteger executorNum = new AtomicInteger(0);
@@ -89,7 +88,6 @@ public class Server {
                 DelayQueue<RespData> dataQueue = getRespDataQueue(executor);
                 ThreadPoolUtils threadPoolUtils = ThreadPoolUtils.getInstance();
                 while (true) {
-                    System.out.println(Thread.currentThread().getName() + " started");
                     RespData respData = null;
                     try {
                         respData = dataQueue.take();
@@ -132,11 +130,14 @@ public class Server {
         }
     }
 
-    List<SortRespData> list = new ArrayList<>(500);
+    List<SortRespData> list = new ArrayList<>(10000);
+
     private void respSort(SortRespData respData) {
         FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_JSON);
-        byte[] resp = String.format(SORT_RESP, respData.getId(), list.indexOf(respData) + 1).getBytes();
+        int index = list.indexOf(respData) + 1;
+        log.info("resp|{}|{}", respData.getId(), index);
+        byte[] resp = String.format(SORT_RESP, respData.getId(), index).getBytes();
         ByteBuf byteBuf = PooledByteBufAllocator.DEFAULT.directBuffer(resp.length);
         byteBuf.writeBytes(resp);
         response.content().writeBytes(byteBuf);
@@ -324,7 +325,20 @@ public class Server {
         }*/
 
 //        this.numIndex = new NumIndex("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
-        this.numIndex = new NumIndex(basePath + File.separator + "pi-200m.txt");
+//        this.numIndex = new NumIndex(basePath + File.separator + "pi-200m.txt");
+        this.bitSetPiWarehouse = SpringBeanUtils.getBean(BitSetPiWarehouse.class);
+        new Thread(() -> {
+            while (true) {
+                SortRespData sortRespData = ProducerConsumer02.take();
+                log.info("req|{}|{}", sortRespData.getId(), sortRespData.getIndexId());
+                list.add(sortRespData);
+                list.sort((o1, o2) -> {
+                    int x = o1.getIndexId();
+                    int y = o2.getIndexId();
+                    return (x < y) ? -1 : ((x == y) ? 0 : 1);
+                });
+            }
+        }).start();
     }
 
     private void readIdxFile() {
@@ -431,16 +445,11 @@ public class Server {
 
         private void task(FullHttpRequest request, ChannelHandlerContext ctx, Map<String, String> paramMap) {
             String num = paramMap.get("m");
-            int offset = server.numIndex.getOffset(num, 1000000);
-//            int offset = server.bitSetPiWarehouse.indexOf(num);
-            SortRespData sortRespData = new SortRespData(ctx, Integer.valueOf(String.valueOf(paramMap.get("id"))), 30000);
+            // int offset = server.numIndex.getOffset(num, 1000000);
+            int offset = server.bitSetPiWarehouse.indexOf(num);
+            SortRespData sortRespData = new SortRespData(ctx, Integer.valueOf(String.valueOf(paramMap.get("id"))), 30100);
             sortRespData.setIndexId(offset);
-            server.list.add(sortRespData);
-            server.list.sort((o1, o2) -> {
-                int x = o1.getIndexId();
-                int y = o2.getIndexId();
-                return (x < y) ? -1 : ((x == y) ? 0 : 1);
-            });
+            ProducerConsumer02.put(sortRespData);
             server.putRespData(ctx.executor(), sortRespData);
             server.getAttach(ctx.executor());
         }

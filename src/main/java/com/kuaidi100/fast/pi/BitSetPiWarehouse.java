@@ -16,7 +16,7 @@ import java.io.InputStream;
 import java.util.BitSet;
 import java.util.concurrent.ConcurrentHashMap;
 
-//@Component
+@Component
 public class BitSetPiWarehouse implements PiWarehouse {
 
     private static final Logger log = LoggerFactory.getLogger(BitSetPiWarehouse.class);

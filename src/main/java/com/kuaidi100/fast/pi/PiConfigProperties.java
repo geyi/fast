@@ -4,7 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "pi")
 public class PiConfigProperties {
-    private String piFilePath = "C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt";
+    private String piFilePath = "/root/fast/data/pi-200m.txt";
     private String piFileDir = "config/pi";
     private Integer readerCount = 8;
     private Integer piLength = 250000000;

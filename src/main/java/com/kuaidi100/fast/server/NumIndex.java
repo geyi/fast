@@ -185,7 +185,7 @@ public class NumIndex {
         }*/
 
 
-        String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_orderid_500.txt";
+        /*String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_orderid_500.txt";
         BufferedReader reader = new BufferedReader(new FileReader(path));
         reader.readLine();
         String line;
@@ -205,13 +205,13 @@ public class NumIndex {
                     .append(" query:")
                     .append(arr[3]);
             System.out.println(builder.toString());
-        }
+        }*/
 
-        /*long start2 = System.currentTimeMillis();
+        long start2 = System.currentTimeMillis();
         String s =
-                "9918471532846957100840566775202932083434981268310082433961415075316781476534034038423001293534726182";
+                "6297725836948171582303520851975899600022560751156863588958139717750199636158772454376211054885388779";
         System.out.println(numIndex.getOffset(s, 1000000));
-        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");*/
+        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");
 
         /*System.out.println(numIndex.get(Byte.valueOf("1"), 5975514));*/
 

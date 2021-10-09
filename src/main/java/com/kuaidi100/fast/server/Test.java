@@ -6,8 +6,14 @@ import co.paralleluniverse.strands.SuspendableRunnable;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.util.ParameterizedTypeImpl;
 
+import java.io.BufferedReader;
+import java.io.FileReader;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 public class Test {
     public static void main(String[] args) throws Exception {
@@ -40,10 +46,51 @@ public class Test {
         Result<List<Item>> listResult = parseListResult(s, Item.class);
         System.out.println(listResult);*/
 
-        long WORD_MASK = 0xffffffffffffffffL;
+        /*long WORD_MASK = 0xffffffffffffffffL;
         System.out.println(WORD_MASK << 65);
         System.out.println(Long.toBinaryString(WORD_MASK << 65));
-        System.out.println(Long.numberOfTrailingZeros(WORD_MASK << 65));
+        System.out.println(Long.numberOfTrailingZeros(WORD_MASK << 65));*/
+
+        FileReader fileReader = new FileReader("C:\\Users\\kuaidi100\\Desktop\\nohup.log");
+        BufferedReader bufferedReader = new BufferedReader(fileReader);
+
+        String s;
+        Map<Integer, String> map = new TreeMap<>();
+        while ((s = bufferedReader.readLine()) != null) {
+            if (!s.contains("resp")) {
+                continue;
+            }
+            String[] split = s.split("\\|");
+            map.put(Integer.valueOf(split[6]), split[7]);
+        }
+        System.out.println(map);
+        System.out.println(map.size());
+
+        Map<Integer, String> sourceMap = new TreeMap<>();
+        List<Integer> list = new ArrayList<>();
+        for (int i = 0; i <= 3; i++) {
+            fileReader = new FileReader("C:\\Users\\kuaidi100\\Desktop\\test_data_orderid_" + i + ".txt");
+            bufferedReader = new BufferedReader(fileReader);
+            while ((s = bufferedReader.readLine()) != null) {
+                String[] split = s.split(",");
+                sourceMap.put(Integer.valueOf(split[0]), split[5]);
+                list.add(Integer.valueOf(split[1]));
+            }
+        }
+        System.out.println(sourceMap);
+        list.sort((o1, o2) -> {
+            return o1.compareTo(o2);
+        });
+        int num = 0;
+        for (Integer integer : list) {
+            System.out.println(++num + "|" + integer);
+        }
+
+        for (int i = 1; i <= 3000; i++) {
+            if (!map.get(i).equals(sourceMap.get(i))) {
+                System.out.println(i + "|" + map.get(i) + "|" + sourceMap.get(i));
+            }
+        }
     }
 
     private static <T> Result<List<T>> parseListResult(String json, Class<T> clazz) {
