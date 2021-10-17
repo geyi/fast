@@ -23,7 +23,7 @@ public class ThreadPoolUtils {
     private static final AtomicLongFieldUpdater<ThreadPoolUtils> TOTAL_TIME_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ThreadPoolUtils.class, "totalTime");
     private volatile long totalTime = 0;
-    public static final int CORE_POOL_SIZE = 512;
+    public static final int CORE_POOL_SIZE = 8;
 
     private ThreadPoolUtils() {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
@@ -36,7 +36,7 @@ public class ThreadPoolUtils {
             corePoolSize = CORE_POOL_SIZE;
             maxPoolSize = CORE_POOL_SIZE;
         }
-        int queueSize = 200;
+        int queueSize = 2000;
         log.info("corePoolSize: {}, maxPoolSize: {}, queueSize: {}", corePoolSize, maxPoolSize, queueSize);
         executor = new ThreadPoolExecutor(corePoolSize, maxPoolSize, 60, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(queueSize),

@@ -170,7 +170,7 @@ public class NumIndex {
     public static void main(String[] args) throws IOException {
         System.out.println(LONG_CAPACITY);
         long start = System.currentTimeMillis();
-        NumIndex numIndex = new NumIndex("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        NumIndex numIndex = new NumIndex("/Users/GEYI/tmp/pi-200m.txt");
         System.out.println("初始化时间：" + (System.currentTimeMillis() - start) + "ms");
 
         /*for (int i = 0; i < 99; i++) {
@@ -185,27 +185,32 @@ public class NumIndex {
         }*/
 
 
-        /*String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_orderid_500.txt";
+        String path = "/Users/GEYI/tmp/test_data_orderid_500.txt";
         BufferedReader reader = new BufferedReader(new FileReader(path));
-        reader.readLine();
         String line;
+        int totalTime = 0;
         while ((line = reader.readLine()) != null) {
             String[] arr = line.split(",");
             long time = System.currentTimeMillis();
             int idx = numIndex.getOffset(arr[3], 1000000);
 //            int idx = numIndex.getOffset(arr[3]);
             time = System.currentTimeMillis() - time;
-            StringBuilder builder = new StringBuilder();
-            builder.append("index:")
-                    .append(idx)
-                    .append(" test index:")
-                    .append(arr[0])
-                    .append(" time:")
-                    .append(time)
-                    .append(" query:")
-                    .append(arr[3]);
-            System.out.println(builder.toString());
-        }*/
+            totalTime += time;
+            if (((idx + 1) != Integer.parseInt(arr[0]))) {
+                StringBuilder builder = new StringBuilder();
+                builder/*.append("ret:" + ((idx + 1) == Integer.parseInt(arr[0])))*/
+                        .append("index:")
+                        .append(idx)
+                        .append(" test index:")
+                        .append(arr[0])
+                        .append(" time:")
+                        .append(time)
+                        .append(" query:")
+                        .append(arr[3]);
+                System.out.println(builder.toString());
+            }
+        }
+        System.out.println("平均耗时：" + totalTime / 500);
 
         long start2 = System.currentTimeMillis();
         String s =
@@ -220,7 +225,7 @@ public class NumIndex {
     public int getOffset(String s) {
         int index = 0;
         Byte num = Byte.valueOf(s.substring(index, 1));
-        for (int i = 0; i < CAPACITY; i = nextBitIndex(num, ++i)) {
+        for (int i = 0; i != -1 && i < CAPACITY; i = nextBitIndex(num, ++i)) {
             int offset = i;
             if (check(s, index, offset)) {
                 return offset;
@@ -243,26 +248,13 @@ public class NumIndex {
                 int m = finalJ * range;
                 int n = Math.min(CAPACITY, m + range);
 
-                for (int i = m; i < n && !success.get(); i = nextBitIndex(num, i)) {
+                for (int i = m; i != -1 && i < n && !success.get(); i = nextBitIndex(num, ++i)) {
                     if (check(s, index, i)) {
                         result.set(i);
                         success.set(true);
                         countDownLatch.countDown();
-                    } else {
-                        i++;
                     }
                 }
-
-                /*for (int i = m; i < n && !success.get(); i++) {
-                    if (!get(num, i)) {
-                        continue;
-                    }
-                    if (check(s, index, i)) {
-                        result.set(i);
-                        success.set(true);
-                        countDownLatch.countDown();
-                    }
-                }*/
             });
         }
         try {
