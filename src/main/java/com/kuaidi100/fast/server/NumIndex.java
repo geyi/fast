@@ -7,9 +7,13 @@ import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -29,6 +33,11 @@ public class NumIndex {
             positionMap.put(Byte.valueOf(String.valueOf(i)), new long[LONG_CAPACITY]);
         }
         init();
+        init2();
+    }
+
+    public Map<Byte, long[]> getPositionMap() {
+        return positionMap;
     }
 
     private void set(Byte num, int bitIndex) {
@@ -37,11 +46,11 @@ public class NumIndex {
         bitmap[longIndex] = bitmap[longIndex] | (1L << bitIndex);
     }
 
-    private boolean get(Byte num, int bitIndex) {
+    public boolean get(Byte num, int bitIndex) {
         return (positionMap.get(num)[bitIndex >>> LONG_ADDRESSABLE_BITS] & (1L << bitIndex)) != 0;
     }
 
-    private int nextBitIndex(Byte num, int bitIndex) {
+    public int nextBitIndex(Byte num, int bitIndex) {
         long[] words = positionMap.get(num);
         int u = bitIndex >>> LONG_ADDRESSABLE_BITS;
         if (u >= LONG_CAPACITY)
@@ -117,6 +126,30 @@ public class NumIndex {
         countDownLatch.countDown();
     }
 
+    private byte[] pi = new byte[CAPACITY];
+    private void init2() {
+        int pos = 2;
+        int size = 40960;
+        while (true) {
+            if (pos >= CAPACITY) {
+                break;
+            }
+            byte[] nums = read(pos, size);
+            if (nums == null) {
+                break;
+            }
+
+            System.arraycopy(nums, 0, pi, pos - 2, nums.length);
+
+            int nextPos = Math.min(CAPACITY, pos + size);
+            int nextSize;
+            if ((nextSize = CAPACITY - nextPos) < size) {
+                size = nextSize;
+            }
+            pos = nextPos;
+        }
+    }
+
     private byte[] read(int position, int size) {
         File file = new File(filePath);
         RandomAccessFile randomAccessTargetFile = null;
@@ -167,10 +200,9 @@ public class NumIndex {
         return null;
     }
 
-    public static void main(String[] args) throws IOException {
-        System.out.println(LONG_CAPACITY);
+    public static void main(String[] args) throws IOException, InterruptedException {
         long start = System.currentTimeMillis();
-        NumIndex numIndex = new NumIndex("/Users/GEYI/tmp/pi-200m.txt");
+        NumIndex numIndex = new NumIndex("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
         System.out.println("初始化时间：" + (System.currentTimeMillis() - start) + "ms");
 
         /*for (int i = 0; i < 99; i++) {
@@ -184,39 +216,130 @@ public class NumIndex {
             bitIndex++;
         }*/
 
+        /*NumTrie numTrie = new NumTrie();
+        String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_10000.txt";
+        BufferedReader reader = new BufferedReader(new FileReader(path));
+        String line;
+        List<Integer> indexList = new ArrayList<>(10000);
+        while ((line = reader.readLine()) != null) {
+            String[] arr = line.split(",");
+            numTrie.add(arr[4]);
+            indexList.add(Integer.valueOf(arr[1]));
+        }
 
-        String path = "/Users/GEYI/tmp/test_data_orderid_500.txt";
+        int limit = CAPACITY - 110;
+        int count = 0;
+        int time = 0;
+        for (int i = 0; i < limit; i++) {
+            byte[] bytes = Arrays.copyOfRange(numIndex.pi, i, i + 110);
+            String s = new String(bytes);
+            start = System.currentTimeMillis();
+            if (i == 48948194) {
+                System.out.println();
+            }
+            if (numTrie.search(s)) {
+//                System.out.println(i);
+                *//*if (!indexList.contains(i) && !indexList.contains(i - 1)) {
+                    System.out.println(i + "," + s);
+                }*//*
+                *//*int t;
+                if (indexList.contains(t = i) || indexList.contains(t = i - 1) || indexList.contains(t = i + 1)) {
+                    indexList.remove(Integer.valueOf(t));
+                }*//*
+                count++;
+            }
+            time += System.currentTimeMillis() - start;
+        }
+        System.out.println("耗时：" + time);
+        System.out.println("找到：" + count);
+        for (Integer integer : indexList) {
+            System.out.println(integer);
+        }*/
+
+
+        /*start = System.currentTimeMillis();
+        int range = 20000000;
+        limit = (CAPACITY / range) + 1;
+        CountDownLatch countDownLatch = new CountDownLatch(limit);
+        for (int j = 0; j < limit; j++) {
+            int finalJ = j;
+            ThreadPoolUtils.getInstance().execute(() -> {
+                int m = finalJ * range;
+                int n = Math.min(CAPACITY, m + range);
+                if (n == CAPACITY) {
+                    n = CAPACITY - 110;
+                }
+                for (int i = m; i < n; i++) {
+                    byte[] bytes = Arrays.copyOfRange(numIndex.pi, i, i + 110);
+                    String s = new String(bytes);
+                    if (numTrie.search(s)) {
+                        System.out.println(i);
+                    }
+                }
+                countDownLatch.countDown();
+            });
+        }
+        countDownLatch.await();
+        System.out.println("耗时：" + (System.currentTimeMillis() - start));*/
+
+        /*for (Map.Entry<Byte, long[]> es : numIndex.positionMap.entrySet()) {
+            Byte num = es.getKey();
+            NumTrie.Node node = new NumTrie.Node(num);
+            int idx = numTrie.getRoot().getNodes().indexOf(node);
+            if (idx != -1) {
+                continue;
+            }
+            long[] bitmap = es.getValue();
+            int offset = -1;
+            NumTrie.Node parent = numTrie.getRoot();
+            while ((offset = numIndex.nextBitIndex(num, ++offset)) != -1) {
+                System.out.println(offset); // 31
+                // 判断32位是否有
+                NumTrie.Node numNode = parent.getNodes().get(idx);
+                for (NumTrie.Node nn : numNode.getNodes()) {
+                    byte value = nn.getValue();
+                    if (numIndex.get(value, offset + 1)) {
+
+                    }
+                }
+            }
+        }*/
+
+
+
+
+        String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_500.txt";
         BufferedReader reader = new BufferedReader(new FileReader(path));
         String line;
         int totalTime = 0;
         while ((line = reader.readLine()) != null) {
             String[] arr = line.split(",");
             long time = System.currentTimeMillis();
-            int idx = numIndex.getOffset(arr[3], 1000000);
+            int idx = numIndex.getOffset(arr[4], 1000000);
 //            int idx = numIndex.getOffset(arr[3]);
             time = System.currentTimeMillis() - time;
             totalTime += time;
             if (((idx + 1) != Integer.parseInt(arr[0]))) {
                 StringBuilder builder = new StringBuilder();
-                builder/*.append("ret:" + ((idx + 1) == Integer.parseInt(arr[0])))*/
-                        .append("index:")
+                builder.append("ret:" + ((idx) == Integer.parseInt(arr[1])))
+                        .append(" index:")
                         .append(idx)
                         .append(" test index:")
-                        .append(arr[0])
+                        .append(arr[1])
                         .append(" time:")
                         .append(time)
                         .append(" query:")
-                        .append(arr[3]);
+                        .append(arr[4]);
                 System.out.println(builder.toString());
             }
         }
         System.out.println("平均耗时：" + totalTime / 500);
 
-        long start2 = System.currentTimeMillis();
+        /*long start2 = System.currentTimeMillis();
         String s =
-                "6297725836948171582303520851975899600022560751156863588958139717750199636158772454376211054885388779";
-        System.out.println(numIndex.getOffset(s, 1000000));
-        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");
+                "0597097089755998121155833587363209162968769330389105362671915650620999330716376827434943697812700528";
+        System.out.println(numIndex.getOffset(s));
+        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");*/
 
         /*System.out.println(numIndex.get(Byte.valueOf("1"), 5975514));*/
 
@@ -226,8 +349,12 @@ public class NumIndex {
         int index = 0;
         Byte num = Byte.valueOf(s.substring(index, 1));
         for (int i = 0; i != -1 && i < CAPACITY; i = nextBitIndex(num, ++i)) {
+            if (i == 98620896) {
+                System.out.println(new String(Arrays.copyOfRange(pi, i, i + 110)));
+
+            }
             int offset = i;
-            if (check(s, index, offset)) {
+            if (check(s, index, offset, 0)) {
                 return offset;
             }
         }
@@ -258,7 +385,7 @@ public class NumIndex {
             });
         }
         try {
-            countDownLatch.await();
+            countDownLatch.await(2000, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
@@ -266,7 +393,7 @@ public class NumIndex {
     }
 
     private boolean check(String s, int index, int offset) {
-        if (index > s.length() - 2) {
+        if (index > s.length() - 80) {
             return true;
         }
         Byte num = Byte.valueOf(s.substring(index + 1, index + 2));
@@ -280,6 +407,25 @@ public class NumIndex {
             }
         }
         return check(s, index + 1, tmpOffset);
+    }
+
+    private boolean check(String s, int index, int offset, int jumpCount) {
+        if (index > s.length() - 2) {
+            return true;
+        }
+        Byte num = Byte.valueOf(s.substring(index + 1, index + 2));
+        int tmpOffset;
+        if (!get(num, (tmpOffset = offset + 1))) {
+            if (index == 0 || jumpCount >= 9) {
+                return false;
+            } else {
+                jumpCount++;
+            }
+            if (!get(num, (tmpOffset = offset + 2))) {
+                return false;
+            }
+        }
+        return check(s, index + 1, tmpOffset, jumpCount);
     }
 
 }

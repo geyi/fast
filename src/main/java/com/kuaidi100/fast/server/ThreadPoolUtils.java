@@ -23,7 +23,7 @@ public class ThreadPoolUtils {
     private static final AtomicLongFieldUpdater<ThreadPoolUtils> TOTAL_TIME_UPDATER =
             AtomicLongFieldUpdater.newUpdater(ThreadPoolUtils.class, "totalTime");
     private volatile long totalTime = 0;
-    public static final int CORE_POOL_SIZE = 8;
+    public static final int CORE_POOL_SIZE = 32;
 
     private ThreadPoolUtils() {
         int availableProcessors = Runtime.getRuntime().availableProcessors();
@@ -74,17 +74,18 @@ public class ThreadPoolUtils {
 //        log.debug("completedTaskCount: {}", executor.getCompletedTaskCount());
 //        log.debug("taskCount: {}", executor.getTaskCount());
 //        log.debug("queueSize: {}", executor.getQueue().size());
-        System.out.println("activeCount: {}" + executor.getActiveCount());
-        System.out.println("completedTaskCount: {}" + executor.getCompletedTaskCount());
-        System.out.println("taskCount: {}" + executor.getTaskCount());
-        System.out.println("queueSize: {}" + executor.getQueue().size());
+//        System.out.println("activeCount: {}" + executor.getActiveCount());
+//        System.out.println("completedTaskCount: {}" + executor.getCompletedTaskCount());
+//        System.out.println("taskCount: {}" + executor.getTaskCount());
+//        System.out.println("queueSize: {}" + executor.getQueue().size());
         int queueSize = executor.getQueue().size();
         if (queueSize >= 10) {
             /*int coreSize = executor.getCorePoolSize() << 1;
             if (coreSize <= 16384) {
                 executor.setCorePoolSize(coreSize);
             }*/
-            log.warn("queueSize: {}, corePoolSize: {}", queueSize, executor.getCorePoolSize());
+//            log.warn("queueSize: {}, corePoolSize: {}", queueSize, executor.getCorePoolSize());
+            System.out.println(queueSize);
         }
     }
 
