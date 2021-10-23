@@ -202,7 +202,7 @@ public class NumIndex {
 
     public static void main(String[] args) throws IOException, InterruptedException {
         long start = System.currentTimeMillis();
-        NumIndex numIndex = new NumIndex("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        NumIndex numIndex = new NumIndex(Constant.BASE_PATH + "pi-200m.txt");
         System.out.println("初始化时间：" + (System.currentTimeMillis() - start) + "ms");
 
         /*for (int i = 0; i < 99; i++) {
@@ -217,7 +217,7 @@ public class NumIndex {
         }*/
 
         /*NumTrie numTrie = new NumTrie();
-        String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_10000.txt";
+        String path = Constant.BASE_PATH + "test_data_10000.txt";
         BufferedReader reader = new BufferedReader(new FileReader(path));
         String line;
         List<Integer> indexList = new ArrayList<>(10000);
@@ -308,7 +308,7 @@ public class NumIndex {
 
 
 
-        String path = "C:\\Users\\kuaidi100\\Desktop\\test_data_500.txt";
+        String path = Constant.BASE_PATH + "test_data_10000.txt";
         BufferedReader reader = new BufferedReader(new FileReader(path));
         String line;
         int totalTime = 0;
@@ -319,7 +319,7 @@ public class NumIndex {
 //            int idx = numIndex.getOffset(arr[3]);
             time = System.currentTimeMillis() - time;
             totalTime += time;
-            if (((idx + 1) != Integer.parseInt(arr[0]))) {
+            if ((idx != Integer.parseInt(arr[1]))) {
                 StringBuilder builder = new StringBuilder();
                 builder.append("ret:" + ((idx) == Integer.parseInt(arr[1])))
                         .append(" index:")
@@ -376,7 +376,7 @@ public class NumIndex {
                 int n = Math.min(CAPACITY, m + range);
 
                 for (int i = m; i != -1 && i < n && !success.get(); i = nextBitIndex(num, ++i)) {
-                    if (check(s, index, i)) {
+                    if (check(s, index, i, 0)) {
                         result.set(i);
                         success.set(true);
                         countDownLatch.countDown();
@@ -385,7 +385,7 @@ public class NumIndex {
             });
         }
         try {
-            countDownLatch.await(2000, TimeUnit.MILLISECONDS);
+            countDownLatch.await(1000, TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }

@@ -39,7 +39,7 @@ public class PiUtils {
     }
 
     private static void buildPiFile(int count) throws IOException {
-        String pi = readPi("C:\\Users\\kuaidi100\\Desktop\\pi-200m.txt");
+        String pi = readPi(Constant.BASE_PATH + "pi-200m.txt");
         Random random = new Random();
         int srcLen = 109;
         int patterLen = 100;
@@ -85,7 +85,7 @@ public class PiUtils {
             list.get(i).orderId = i + 1;
         }
         list.sort(Comparator.comparing(o -> o.id));
-        String fileName = "C:\\Users\\kuaidi100\\Desktop\\test_data_" + count + ".txt";
+        String fileName = Constant.BASE_PATH + "test_data_" + count + ".txt";
         BufferedWriter writer = new BufferedWriter(new FileWriter(fileName));
         for (PiData data : list) {
             String content = String.format("%d,%d,%s,%d,%s,%d\n",
@@ -119,7 +119,7 @@ public class PiUtils {
     }
 
     public static void main(String[] args) throws IOException {
-        buildPiFile(500);
+        buildPiFile(10000);
         System.out.println("success");
 //        String pi = readPi("config/pi-200m.txt");
 //        int pos = 53358517;
