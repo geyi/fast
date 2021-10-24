@@ -1,5 +1,7 @@
 package com.kuaidi100.fast.pi;
 
+import com.kuaidi100.fast.server.Constant;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -13,8 +15,8 @@ import java.util.Map;
 public class PiFormat {
     public static void main(String[] args) throws IOException {
         Map<String, BitSet> map = new HashMap<>();
-//        File pi = new File("config/pi-test.txt");
-        File pi = new File("config/pi-200m.txt");
+//        File pi = new File(Constant.BASE_PATH + "pi-test.txt");
+        File pi = new File(Constant.BASE_PATH + "pi-200m.txt");
         InputStream in = new FileInputStream(pi);
         in.read(new byte[2]);
         byte[] buff = new byte[1024 * 16];
@@ -46,7 +48,7 @@ public class PiFormat {
 //                break;
 //            }
         }
-        ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream("config/pi-format"));
+        ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(Constant.BASE_PATH + "pi-format"));
         oos.writeObject(map);
         oos.close();
     }

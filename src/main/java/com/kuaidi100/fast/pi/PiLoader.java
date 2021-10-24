@@ -1,5 +1,7 @@
 package com.kuaidi100.fast.pi;
 
+import com.kuaidi100.fast.server.Constant;
+
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -9,7 +11,7 @@ import java.util.Map;
 
 public class PiLoader {
     public static void main(String[] args) throws IOException, ClassNotFoundException {
-        File file = new File("config/pi-format");
+        File file = new File(Constant.BASE_PATH + "pi-format");
         ObjectInputStream ois = new ObjectInputStream(new FileInputStream(file));
         Map<String, BitSet> map = (Map<String, BitSet>) ois.readObject();
 //        for (String key:map.keySet()) {

@@ -316,10 +316,10 @@ public class NumIndex {
             String[] arr = line.split(",");
             long time = System.currentTimeMillis();
             int idx = numIndex.getOffset(arr[4], 1000000);
-//            int idx = numIndex.getOffset(arr[3]);
             time = System.currentTimeMillis() - time;
             totalTime += time;
             if ((idx != Integer.parseInt(arr[1]))) {
+//            if (idx == -1) {
                 StringBuilder builder = new StringBuilder();
                 builder.append("ret:" + ((idx) == Integer.parseInt(arr[1])))
                         .append(" index:")
@@ -335,11 +335,11 @@ public class NumIndex {
         }
         System.out.println("平均耗时：" + totalTime / 500);
 
-        /*long start2 = System.currentTimeMillis();
+        long start2 = System.currentTimeMillis();
         String s =
-                "0597097089755998121155833587363209162968769330389105362671915650620999330716376827434943697812700528";
+                "1160902760295994162651784447730911185638855599865372816221178941988614580870332961023372299751257621";
         System.out.println(numIndex.getOffset(s));
-        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");*/
+        System.out.println("搜索时间：" + (System.currentTimeMillis() - start2) + "ms");
 
         /*System.out.println(numIndex.get(Byte.valueOf("1"), 5975514));*/
 
@@ -349,10 +349,23 @@ public class NumIndex {
         int index = 0;
         Byte num = Byte.valueOf(s.substring(index, 1));
         for (int i = 0; i != -1 && i < CAPACITY; i = nextBitIndex(num, ++i)) {
-            if (i == 98620896) {
+            if (i == 38990134) {
                 System.out.println(new String(Arrays.copyOfRange(pi, i, i + 110)));
 
             }
+            int offset = i;
+            if (check(s, index, offset, 0)) {
+                return offset;
+            }
+        }
+        return -1;
+    }
+
+    public int getOffsetFrom(String s, int start) {
+        int index = 0;
+        byte num = (byte) (s.charAt(index) - 48);
+        int limit = Math.min(CAPACITY, start + 20);
+        for (int i = start; i != -1 && i < limit; i = nextBitIndex(num, ++i)) {
             int offset = i;
             if (check(s, index, offset, 0)) {
                 return offset;
@@ -410,10 +423,10 @@ public class NumIndex {
     }
 
     private boolean check(String s, int index, int offset, int jumpCount) {
-        if (index > s.length() - 2) {
+        if (index > 19) {
             return true;
         }
-        Byte num = Byte.valueOf(s.substring(index + 1, index + 2));
+        byte num = (byte) (s.charAt(index + 1) - 48);
         int tmpOffset;
         if (!get(num, (tmpOffset = offset + 1))) {
             if (index == 0 || jumpCount >= 9) {

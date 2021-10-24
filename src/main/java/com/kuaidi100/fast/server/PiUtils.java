@@ -60,15 +60,10 @@ public class PiUtils {
                 for (int j = 0; j < data.miss; j++) {
                     int pos = random.nextInt(11);
                     pos = 12 * j + pos + 2;
-                    if (off + 1 == pos) {
-                        pos += 1;
-                        System.out.println(off + "/" + pos);
-                    }
-                    String substring = data.pattern.substring(off, pos);
-                    if (substring.length() == 1) {
-                        System.out.println(substring);
-                    }
-                    builder.append(substring);
+                    /*if (pos - off <= 3) {
+                        pos += 4;
+                    }*/
+                    builder.append(data.pattern, off, pos);
                     data.missPos.add(pos);
                     off = pos + 1;
                 }
@@ -119,9 +114,9 @@ public class PiUtils {
     }
 
     public static void main(String[] args) throws IOException {
-        buildPiFile(10000);
+        buildPiFile(200000);
         System.out.println("success");
-//        String pi = readPi("config/pi-200m.txt");
+//        String pi = readPi(Constant.BASE_PATH + "pi-200m.txt");
 //        int pos = 53358517;
 //        System.out.println(pi.substring(pos, pos + 109));
 //        pos = 53358534;

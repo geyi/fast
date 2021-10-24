@@ -1,5 +1,7 @@
 package com.kuaidi100.fast.pi;
 
+import com.kuaidi100.fast.server.Constant;
+
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -11,8 +13,8 @@ import java.util.Map;
 
 public class PiPicker {
     public static void main(String[] args) throws IOException {
-        String piFile = "config/pi-200m.txt";
-        String dirPath = "config/pi";
+        String piFile = Constant.BASE_PATH + "pi-200m.txt";
+        String dirPath = Constant.BASE_PATH + "pi";
         File dir = new File(dirPath);
         if (!dir.exists()) {
             dir.mkdirs();
